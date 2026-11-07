@@ -1,7 +1,7 @@
 """
 Preprocessing pipeline: raw in-air drawing -> MNIST-like 28x28 image.
 
-Owner: person C.
+Owner: Kirill Riabkov (person C).
 
 The design requirement that matters: every step is switchable independently.
 The ablation study measures what each step contributes on its own, which is

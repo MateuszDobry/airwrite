@@ -1,0 +1,10 @@
+model,seed,file
+aug,42,cnn_aug_seed42.pt
+aug,43,cnn_aug_seed43.pt
+aug,44,cnn_aug_seed44.pt
+cnn,42,cnn_mnist_seed42.pt
+cnn,43,cnn_mnist_seed43.pt
+cnn,44,cnn_mnist_seed44.pt
+logreg,42,logreg_seed42.joblib
+logreg,43,logreg_seed43.joblib
+logreg,44,logreg_seed44.joblib

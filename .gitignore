@@ -8,13 +8,17 @@ venv/
 data/mnist/
 data/processed/
 models/*.pt
-# Except the checkpoint the live demo (whiteboard --predict) loads.
-!models/cnn_mnist_seed42.pt
+# Except the checkpoints of the official run: all 9 are committed (a few MB)
+# so that results/ can always be re-derived from them. cnn_mnist_seed42.pt is
+# also the checkpoint the live demo (whiteboard --predict) loads.
+!models/cnn_mnist_seed4[234].pt
+!models/cnn_aug_seed4[234].pt
 
 # Our own collected digits ARE committed - they are the dataset and must be
 # submitted with the project.
 !data/raw/
 models/*.joblib
+!models/logreg_seed4[234].joblib
 
 # Smoke tests and synthetic stand-in runs: never part of the results.
 models/smoke/
