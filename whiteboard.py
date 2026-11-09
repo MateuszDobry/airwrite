@@ -13,13 +13,25 @@ Run directly for free drawing:
 
     python whiteboard.py
 
+or as the live demo, which classifies the digit every time the hand pauses:
+
+    python whiteboard.py --predict              # MNIST CNN, full preprocessing
+    python whiteboard.py --predict --model aug  # the augmented CNN instead
+
+In --predict mode the keys are:
+    p   switch between full and minimal preprocessing (shows the domain gap live)
+    c   clear the canvas
+    q   quit
+
 The Whiteboard class is also imported by collect_data.py, which reuses it to
 record our own dataset of digits written in the air.
 """
 
+import argparse
+from collections import deque
+
 import cv2
 import numpy as np
-from collections import deque
 
 import config
 from gestures import (
@@ -74,6 +86,7 @@ class HandTracker:
                     frame_bgr, hand, self._connections)
 
     def close(self):
+        """Release MediaPipe resources."""
         self._hands.close()
 
 
@@ -107,6 +120,7 @@ class Whiteboard:
         self._prev_point = None
 
     def is_empty(self):
+        """True when nothing has been drawn since the last clear."""
         return not self.canvas.any()
 
     # -- per-frame update --------------------------------------------------
@@ -162,6 +176,7 @@ class Whiteboard:
         return (int(sum(xs) / len(xs)), int(sum(ys) / len(ys)))
 
     def _end_stroke(self):
+        """Forget the last point so the next stroke is not joined to this one."""
         self._recent.clear()
         self._prev_point = None
 
@@ -232,8 +247,98 @@ def draw_hud(frame, lines, cursor=None, mode=None):
         cv2.circle(frame, cursor, 10, (0, 220, 255), filled)
 
 
+class LivePredictor:
+    """
+    Classifies the drawing on the canvas for the live demo.
+
+    The model and preprocessing are exactly the ones used in the study:
+    preprocessing.preprocess() with FULL_STEPS or MINIMAL_STEPS, and a
+    checkpoint from models/ (by default cnn_mnist_seed42.pt, the same file
+    that model.predict() loads). Nothing is tuned for the demo.
+    """
+
+    def __init__(self, tag="mnist", seed=config.SEED):
+        # Imported here so that plain drawing mode does not need PyTorch.
+        import model as model_lib
+        import preprocessing
+
+        self._model_lib = model_lib
+        self._pre = preprocessing
+        self.model = model_lib.load_model(tag, seed)
+        self.tag = tag
+        self.full = True        # start with the full preprocessing pipeline
+
+    @property
+    def steps(self):
+        return self._pre.FULL_STEPS if self.full else self._pre.MINIMAL_STEPS
+
+    def __call__(self, raw):
+        """
+        Args:
+            raw: cropped grayscale drawing from Whiteboard.extract_digit().
+
+        Returns:
+            (top3, img28) where top3 is a list of (digit, probability) pairs,
+            best first, and img28 is the 28x28 image the model actually saw.
+        """
+        img28 = self._pre.preprocess(raw, self.steps)
+        _, probs = self._model_lib.predict_batch(self.model, img28[None])
+        order = np.argsort(probs[0])[::-1][:3]
+        return [(int(d), float(probs[0, d])) for d in order], img28
+
+
+def draw_prediction(frame, top3, img28, steps_name):
+    """Show the predicted digit, the top-3 list and what the model saw."""
+    h, w = frame.shape[:2]
+    digit, conf = top3[0]
+
+    # Big predicted digit in the top-right corner.
+    text = str(digit)
+    cv2.putText(frame, text, (w - 150, 130), cv2.FONT_HERSHEY_SIMPLEX,
+                4.5, (0, 0, 0), 14)
+    cv2.putText(frame, text, (w - 150, 130), cv2.FONT_HERSHEY_SIMPLEX,
+                4.5, (60, 230, 60), 5)
+
+    lines = [f"{d}: {p * 100:5.1f}%" for d, p in top3]
+    lines.append(f"preproc: {steps_name}")
+    for i, line in enumerate(lines):
+        y = 175 + i * 26
+        cv2.putText(frame, line, (w - 200, y), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.65, (0, 0, 0), 4)
+        cv2.putText(frame, line, (w - 200, y), cv2.FONT_HERSHEY_SIMPLEX,
+                    0.65, (255, 255, 255), 1)
+
+    # The 28x28 model input, scaled up 5x. img28 is standardised with the
+    # MNIST mean/std, so map it back to 0-255 for display only.
+    vis = img28 * config.MNIST_STD + config.MNIST_MEAN
+    vis = np.clip(vis * 255, 0, 255).astype(np.uint8)
+    vis = cv2.resize(vis, (140, 140), interpolation=cv2.INTER_NEAREST)
+    vis = cv2.cvtColor(vis, cv2.COLOR_GRAY2BGR)
+    y0 = 175 + len(lines) * 26
+    if y0 + 140 < h:
+        frame[y0:y0 + 140, w - 160:w - 20] = vis
+        cv2.rectangle(frame, (w - 161, y0 - 1), (w - 19, y0 + 140),
+                      (200, 200, 200), 1)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Gesture-controlled whiteboard (optionally with live "
+                    "digit recognition).")
+    parser.add_argument("--predict", action="store_true",
+                        help="classify the digit whenever the hand pauses")
+    parser.add_argument("--model", default="mnist", choices=["mnist", "aug"],
+                        help="checkpoint tag: mnist (default) or aug")
+    parser.add_argument("--seed", type=int, default=config.SEED,
+                        help="checkpoint seed (default: config.SEED)")
+    return parser.parse_args()
+
+
 def main():
-    """Free-drawing mode: draw with gestures, press q to quit."""
+    """Free drawing, or the live demo with --predict. Press q to quit."""
+    args = parse_args()
+    predictor = LivePredictor(args.model, args.seed) if args.predict else None
+
     cap = open_camera()
     tracker = HandTracker()
 
@@ -248,6 +353,12 @@ def main():
     print(f"Camera running at {width}x{height}")
     print("index finger = draw | fist = pause | two fingers = move | "
           "open palm = clear | q = quit")
+    if predictor:
+        print(f"Live prediction with models/cnn_{args.model}_seed{args.seed}.pt"
+              " | p = full/minimal preprocessing | c = clear")
+
+    prediction = None   # (top3, img28) of the current drawing, or None
+    dirty = False       # True when the canvas changed since the last prediction
 
     while True:
         ok, frame = cap.read()
@@ -261,13 +372,37 @@ def main():
         landmarks, result = tracker.find(frame)
         mode, cursor = board.update(landmarks)
 
+        if predictor:
+            if mode == MODE_DRAW or board.is_empty():
+                # Still writing (or canvas cleared): hide the old answer and
+                # wait for the pause instead of predicting half a digit.
+                prediction = None
+                dirty = not board.is_empty()
+            elif dirty:
+                # The hand stopped drawing: classify the finished digit once.
+                prediction = predictor(board.extract_digit())
+                dirty = False
+
         display = board.overlay(frame)
         tracker.draw_skeleton(display, result)
         draw_hud(display, [f"mode: {mode}"], cursor, mode)
+        if prediction is not None:
+            draw_prediction(display, *prediction,
+                            "full" if predictor.full else "minimal")
 
         cv2.imshow("Air whiteboard", display)
-        if cv2.waitKey(1) & 0xFF == ord("q"):
+        key = cv2.waitKey(1) & 0xFF
+        if key == ord("q"):
             break
+        elif key == ord("c"):
+            board.clear()
+            prediction = None
+        elif key == ord("p") and predictor:
+            # Re-classify the same drawing with the other pipeline, so the
+            # audience sees the effect of preprocessing on one digit.
+            predictor.full = not predictor.full
+            if not board.is_empty():
+                prediction = predictor(board.extract_digit())
 
     cap.release()
     tracker.close()

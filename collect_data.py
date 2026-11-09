@@ -59,6 +59,7 @@ def save_sample(image, writer, digit):
 
 
 def parse_args():
+    """Command-line options: writer name and samples per digit."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--writer", required=True,
@@ -72,6 +73,7 @@ def parse_args():
 
 
 def main():
+    """Collection loop: draw, save with SPACE, move through digits 0-9."""
     args = parse_args()
     writer = args.writer.strip().lower()
     target = args.per_digit

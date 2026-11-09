@@ -270,6 +270,7 @@ def upsert_rows(path, new_rows, key_cols):
 
 
 def main():
+    """Train the selected models for every seed and evaluate them on MNIST."""
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("--models", nargs="+", default=["logreg", "cnn", "aug"],

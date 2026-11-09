@@ -46,24 +46,24 @@ that writes to `results/` (not computed by hand or in a notebook cell that is no
 
 **Must have**
 
-- [ ] **Error analysis** from `figures/confusion_ours_minimal.png` and
+- [x] **Error analysis** (draft: `docs/analysis-notes.md` §1, `figures/analysis/confusion_gallery.png`) from `figures/confusion_ours_minimal.png` and
       `misclassified_minimal.png`. Main confusions at minimal preprocessing:
       6 → 5 (6.3 per seed), 7 → 1 (6.0), 1 → 7 (3.7), 9 → 3 (3.7) of about 80 per digit
       (`results/metrics/confusion_pairs.csv`). Explain each from the images
       (e.g. a 1 written with a serif/flag looks like a European 7; a 6 with an open loop).
       Then show which of these disappear with full preprocessing (`confusion_ours_full.png`).
-- [ ] **Per-class F1** (`results/per_class_f1.csv`): digits 1, 7, 9 are weakest at
+- [x] **Per-class F1** (draft: `docs/analysis-notes.md` §2, `results/analysis/per_class_f1_all.csv`; `results/per_class_f1.csv`): digits 1, 7, 9 are weakest at
       minimal preprocessing; show how each step changes them. A small table or heatmap.
-- [ ] **Ablation interpretation** (`figures/ablation_cnn.png`, `ablation_models.png`):
+- [x] **Ablation interpretation** (draft: `docs/analysis-notes.md` §3, plus MNIST shift test `results/analysis/shift_sensitivity.csv`) (`figures/ablation_cnn.png`, `ablation_models.png`):
       contribution of each step, for all three models. Explain why centring helps the
       linear model so much more than the CNN (pooling gives the CNN some translation
       invariance; logistic regression has none).
-- [ ] **Domain statistics** (`domain_stroke_width.png`, `domain_fill_ratio.png`): link
+- [x] **Domain statistics** (draft: `docs/analysis-notes.md` §4) (`domain_stroke_width.png`, `domain_fill_ratio.png`): link
       the measured differences to the preprocessing steps that fix them.
-- [ ] **Why augmentation hurts**: look at `augmentation_examples.png`. Our digits are
+- [x] **Why augmentation hurts** (draft: `docs/analysis-notes.md` §5, `results/analysis/ones_as_sevens.csv`): look at `augmentation_examples.png`. Our digits are
       clean and upright; rotation, elastic warp and dilation make the training data
       *less* like our test data. State this as a hypothesis, not a proven fact.
-- [ ] **Ceiling effect**: say that fine-tuning and LOWO are saturated, so they give no
+- [x] **Ceiling effect** (draft: `docs/analysis-notes.md` §6): say that fine-tuning and LOWO are saturated, so they give no
       information about generalisation to a new writer at this data size.
 
 **Should have (strengthens "sufficient analysis" and the hyperparameter point in the template)**
@@ -147,7 +147,7 @@ Use **exactly** this structure (course template). Header: title, all names, stud
 | ≥ 2 AI/data libraries | ✅ PyTorch, scikit-learn, NumPy, pandas, Matplotlib |
 | Code runs correctly | ✅ full run completed; re-check on a fresh clone before submitting |
 | Reproducible (seeds, pinned versions) | ✅ seeds fixed, `requirements.txt` pinned |
-| Sufficient comments | ☐ review every `.py` file: module docstring, function docstrings, comments on non-obvious steps |
+| Sufficient comments | ✅ every `.py` has a module docstring; docstrings added to the remaining non-trivial functions |
 | No fabricated/modified results | ✅ keep it that way: numbers only from `results/` |
 | AI / data analysis applied to our field of study | ☐ state the link explicitly in the Introduction |
 | Clear goal of the program | ✅ research question in README / CLAUDE.md |
@@ -163,11 +163,11 @@ Use **exactly** this structure (course template). Header: title, all names, stud
 
 ## 5. Code and repository housekeeping
 
-- [ ] `whiteboard.py --predict`: live prediction for the demo. Show the predicted digit and
+- [x] `whiteboard.py --predict`: live prediction for the demo. Show the predicted digit and
       confidence while the hand pauses (fist), using
       `predict(preprocess(board.extract_digit(), FULL_STEPS))` and `models/cnn_mnist_seed42.pt`.
 - [ ] Record a 30-60 s backup video of the demo in case the camera fails on stage.
-- [ ] Update `README.md` / `CLAUDE.md` status (webcam now verified, data collected,
+- [x] Update `README.md` / `CLAUDE.md` status (webcam now verified, data collected,
       results in). Add how the results were produced (CPU, Python 3.11, seeds 42-44).
 - [ ] Fill in names, student IDs, classes in `division-of-work.md`.
 - [ ] Final test on a fresh clone: `pip install -r requirements.txt`, `python gestures.py`,
