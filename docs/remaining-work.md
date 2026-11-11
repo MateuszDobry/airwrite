@@ -4,7 +4,8 @@ Status on 5 November 2026. Deadline: **13 November 2026, 23:59** (report + code 
 oral presentation in weeks 9-11.
 
 Done: code, data collection (4 writers, 807 images), one full run of
-`train.py` → `ablation.py` → `analysis.py`. Every number in the report must come from
+`train.py` → `ablation.py` → `analysis.py` → `metrics_analysis.py` (official run, 7 November 2026,
+Python 3.11 with the pinned `requirements.txt`, CPU; all 9 checkpoints are in `models/`). Every number in the report must come from
 `results/`; every figure from `figures/`.
 
 ---
@@ -15,21 +16,22 @@ From `results/headline.json` and `results/ablation_summary.csv`, mean of 3 seeds
 
 | Setting | Accuracy |
 |---|---|
-| CNN on MNIST test | 99.36 % |
-| Logistic regression on MNIST test | 92.37 % |
+| CNN on MNIST test | 99.33 % |
+| Logistic regression on MNIST test | 92.35 % |
 | CNN on our digits, minimal preprocessing | 96.53 % |
-| CNN on our digits, full preprocessing | 99.50 % |
+| CNN on our digits, full preprocessing | 99.46 % |
 | Augmented CNN on our digits, full preprocessing | 97.19 % |
-| Logistic regression on our digits, minimal → full | 55.39 % → 79.88 % |
-| Fine-tuned CNN (70/30 split) | 100 % (already 100 % before fine-tuning) |
+| Logistic regression on our digits, minimal → full | 55.47 % → 79.97 % |
+| Fine-tuned CNN (70/30 split) | 100 % (already 99.86 % before fine-tuning) |
 
 The story is different from the proposal, and that is fine as long as we say so:
 
 - The CNN loses only **2.8 points** on in-air digits; full preprocessing removes the gap.
-  Centring is the strongest single step, then stroke thickness.
+  Centring is the strongest single step (68 % of the gap closed), then stroke thickness (34 %);
+  see `results/metrics/gap_closed.csv`.
 - The **linear baseline is not robust at all**: a 37-point drop. This is the clearest
   contrast in the study (translation and stroke-width sensitivity vs. a CNN).
-- **Augmentation hurts** on our data (97.19 % vs. 99.50 %).
+- **Augmentation hurts** on our data (97.19 % vs. 99.46 %).
 - **Fine-tuning and leave-one-writer-out hit the ceiling** (~99-100 % before and after),
   so they cannot rank interventions. Say this explicitly; do not present it as a win.
 - Our strokes are much thinner than MNIST (median width 0.9-1.6 px vs. 2.4 px at 28×28,
@@ -46,7 +48,8 @@ that writes to `results/` (not computed by hand or in a notebook cell that is no
 
 - [ ] **Error analysis** from `figures/confusion_ours_minimal.png` and
       `misclassified_minimal.png`. Main confusions at minimal preprocessing:
-      1 → 7 (6 of 80), 6 → 5 (7 of 80), 9 → 5 / 3. Explain each from the images
+      6 → 5 (6.3 per seed), 7 → 1 (6.0), 1 → 7 (3.7), 9 → 3 (3.7) of about 80 per digit
+      (`results/metrics/confusion_pairs.csv`). Explain each from the images
       (e.g. a 1 written with a serif/flag looks like a European 7; a 6 with an open loop).
       Then show which of these disappear with full preprocessing (`confusion_ours_full.png`).
 - [ ] **Per-class F1** (`results/per_class_f1.csv`): digits 1, 7, 9 are weakest at
@@ -65,13 +68,13 @@ that writes to `results/` (not computed by hand or in a notebook cell that is no
 
 **Should have (strengthens "sufficient analysis" and the hyperparameter point in the template)**
 
-- [ ] **Per-writer zero-shot accuracy** at minimal and full preprocessing (is the writer
+- [x] **Per-writer zero-shot accuracy** (done: `results/metrics/per_writer.csv`) at minimal and full preprocessing (is the writer
       with the thinnest strokes the hardest?). Needs a short script reading
       `data/labels.csv` and the existing checkpoints; output `results/per_writer.csv`.
-- [ ] **Confidence intervals**: 807 test images means one error = 0.12 points. A bootstrap
+- [x] **Confidence intervals** (done: `results/metrics/confidence_intervals.csv`, plus McNemar tests in `mcnemar.csv`): 807 test images means one error = 0.12 points. A bootstrap
       or Wilson interval around the headline accuracies shows which differences are real
-      (2.8-point gap: yes; 99.36 vs 99.50: no). Output `results/confidence_intervals.csv`.
-- [ ] **Hyperparameter robustness**: accuracy as a function of `TARGET_STROKE_RATIO`
+      (2.8-point gap: yes; 99.33 vs 99.46: no). Output `results/confidence_intervals.csv`.
+- [x] **Hyperparameter robustness** (done: `results/metrics/stroke_ratio_sensitivity.csv`): accuracy as a function of `TARGET_STROKE_RATIO`
       (e.g. 0.06-0.18). Report it as a **sensitivity curve only**. The value used in the
       main results (0.12) was fixed before seeing the data and must stay unchanged;
       picking the best value from this curve would be tuning on the test set.

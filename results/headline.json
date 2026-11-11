@@ -1,9 +1,9 @@
 {
-  "mnist_test_accuracy_cnn": 0.9936333333333334,
-  "mnist_test_accuracy_logreg": 0.9236666666666666,
+  "mnist_test_accuracy_cnn": 0.9933333333333333,
+  "mnist_test_accuracy_logreg": 0.9234666666666668,
   "ours_accuracy_cnn_minimal": 0.9653035935563816,
-  "domain_gap_points": 2.8329739776951746,
-  "ours_accuracy_cnn_full_preprocessing": 0.9950433705080544,
+  "domain_gap_points": 2.8029739776951668,
+  "ours_accuracy_cnn_full_preprocessing": 0.9946303180503924,
   "ours_accuracy_aug_full_preprocessing": 0.9719124328789756,
   "ours_accuracy_finetuned": 1.0
 }

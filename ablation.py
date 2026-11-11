@@ -1,7 +1,7 @@
 """
 Runs every experiment on the target domain and writes the results tables.
 
-Owner: person C.
+Owner: Kirill Riabkov (person C).
 
 Usage:
     python ablation.py                 # on our collected data (data/raw/)
