@@ -152,6 +152,7 @@ def misclassified_gallery(raw, prepared, labels, preds, path, title, limit=30):
 
 
 def main():
+    """Run the zero-shot ablation, fine-tuning and LOWO; write results/."""
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("--synthetic", action="store_true",

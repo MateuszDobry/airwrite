@@ -98,6 +98,7 @@ def domain_statistics(mnist_imgs, ours, writers):
 # --------------------------------------------------------------------------
 
 def fig_learning_curves():
+    """Validation accuracy per epoch for the CNN and the augmented CNN (3 seeds)."""
     histories = {}
     for tag, label in (("mnist", "CNN"), ("aug", "CNN + augmentation")):
         runs = [pd.read_csv(p) for p in
@@ -155,6 +156,7 @@ def fig_preprocessing_steps(raw, labels):
 
 
 def fig_augmentation(mnist_x):
+    """A few MNIST digits next to randomly augmented copies of them."""
     rng = np.random.default_rng(config.SEED)
     rows = []
     for img in mnist_x[:3]:
@@ -166,6 +168,7 @@ def fig_augmentation(mnist_x):
 
 
 def fig_domain(stats, writers):
+    """Stroke width and fill ratio distributions: MNIST vs. each writer."""
     colours = [plotting.GREY] + [plotting.writer_colours(writers)[w]
                                  for w in sorted(set(writers))]
     for metric, label, name in (
@@ -184,6 +187,7 @@ def fig_domain(stats, writers):
 def fig_ablation(summary, mnist_acc):
     """Main result chart: what each mitigation recovers."""
     def pick(model, variant, experiment="zero_shot", stage="-"):
+        """Mean and std accuracy of one configuration from the summary table."""
         row = summary[(summary.experiment == experiment)
                       & (summary.model == model)
                       & (summary.variant == variant)
@@ -225,6 +229,7 @@ def fig_ablation(summary, mnist_acc):
 
 
 def fig_lowo():
+    """Leave-one-writer-out accuracy before and after fine-tuning."""
     path = config.RESULTS_DIR / "lowo_summary.csv"
     if not path.exists():
         return
@@ -245,6 +250,7 @@ def fig_lowo():
 def write_headline(summary, mnist_runs):
     """The few numbers quoted in the abstract, written by code."""
     def mean_acc(model, variant, experiment="zero_shot", stage="-"):
+        """Mean accuracy of one configuration, or None if it was not run."""
         row = summary[(summary.experiment == experiment)
                       & (summary.model == model)
                       & (summary.variant == variant)
@@ -272,6 +278,7 @@ def write_headline(summary, mnist_runs):
 
 
 def main():
+    """Compute domain statistics, draw every figure, write headline.json."""
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("--synthetic", action="store_true")

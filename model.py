@@ -71,6 +71,7 @@ def checkpoint_path(tag: str, seed: int) -> Path:
 
 
 def save_model(model, tag, seed):
+    """Save the weights to models/cnn_<tag>_seed<seed>.pt and return the path."""
     path = checkpoint_path(tag, seed)
     torch.save(model.state_dict(), path)
     return path
@@ -84,7 +85,9 @@ def load_model(tag="mnist", seed=config.SEED, device=None):
         raise FileNotFoundError(
             f"{path.name} not found. Run `python train.py` first.")
     model = DigitCNN().to(device)
-    model.load_state_dict(torch.load(path, map_location=device))
+    # weights_only=True: the file holds only tensors, so no pickled code runs.
+    model.load_state_dict(torch.load(path, map_location=device,
+                                     weights_only=True))
     model.eval()
     return model
 

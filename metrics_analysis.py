@@ -334,6 +334,7 @@ def augmentation_stroke_width(n=2000):
 # --------------------------------------------------------------------------
 
 def make_figures(gap, writers_tab, sens, conf, fig_dir):
+    """Draw the four figures in figures/metrics/ from the computed tables."""
     import matplotlib.pyplot as plt
 
     fig_dir.mkdir(parents=True, exist_ok=True)
@@ -409,6 +410,7 @@ def make_figures(gap, writers_tab, sens, conf, fig_dir):
 # --------------------------------------------------------------------------
 
 def main():
+    """Run every analysis on the committed checkpoints and write results/metrics/."""
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("--quick", action="store_true",

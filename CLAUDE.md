@@ -58,6 +58,8 @@ preprocessing.py    image normalisation pipeline        (person C)
 evaluate.py         metrics, confusion matrices         (person C)
 ablation.py         runs all experiment variants        (person C)
 analysis.py         figures, cross-writer study         (person D)
+metrics_analysis.py CIs, McNemar, per-writer, sensitivity (person C)
+error_analysis.py   per-class F1, confusions, shift test
 
 data/raw/<writer>/<digit>/*.png   our own collected digits (raw, uncropped size)
 data/processed/                   generated, not committed
@@ -90,15 +92,16 @@ collection time.
 ## Status
 
 - [x] Phase 0 - repo scaffold, config, requirements (pinned for Python 3.11)
-- [x] Phase 1 - whiteboard, gestures, collection tool (**untested on real
-      hardware**: MediaPipe tracking has not yet been run with a webcam)
+- [x] Phase 1 - whiteboard, gestures, collection tool (verified with a real
+      webcam; `whiteboard.py --predict` is the live demo)
 - [x] Phase 2 - CNN, logistic-regression baseline, training (`train.py`)
 - [x] Phase 3 - preprocessing pipeline, augmentation (`preprocessing.py`)
-- [ ] Phase 4 - data collection, all 4 members, 200 digits each (20 per digit)
+- [x] Phase 4 - data collection: 807 digits from 4 writers (20 per digit)
 - [x] Phase 5 code - `ablation.py` (zero-shot ablation, fine-tuning,
-      leave-one-writer-out). Tested on synthetic stand-in data only.
-- [x] Phase 6 code - `analysis.py`. Tested on synthetic stand-in data only.
-- [ ] Phase 5/6 runs on real data (Colab notebook)
+      leave-one-writer-out).
+- [x] Phase 6 code - `analysis.py`, `metrics_analysis.py`, `error_analysis.py`.
+- [x] Phase 5/6 runs on real data: official run 7 Nov 2026 (CPU, Python 3.11),
+      all 9 checkpoints committed in `models/`
 - [ ] Phase 7 - report
 - [ ] Phase 8 - presentation (10 min, all members on stage)
 - [ ] Phase 9 - submission (two places, see below)
