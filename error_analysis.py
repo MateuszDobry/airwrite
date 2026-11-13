@@ -1,22 +1,16 @@
 """
-Error analysis behind the "must have" items of docs/remaining-work.md, section 2.
+Error analysis (docs/remaining-work.md, section 2).
 
-This script adds the evidence that metrics_analysis.py does not produce yet:
+    1. per-class F1 for every model and variant (mean of 3 seeds)
+    2. how the common confusions change from minimal to full preprocessing
+    3. gallery of the main confusions: raw, minimal input, full input
+    4. which writers' "1"s the augmented CNN predicts as "7"
+    5. shift test on MNIST: CNN vs. logistic regression accuracy when the
+       digits are shifted by k pixels (to check why centering helps logreg
+       so much more than the CNN)
 
-    1. per-class F1 for every model and preprocessing variant (mean of 3 seeds);
-    2. how each frequent confusion changes from minimal to full preprocessing;
-    3. a gallery of the main confusions: raw drawing, minimal input, full input;
-    4. which writers' "1"s the augmented CNN reads as "7";
-    5. a controlled shift test on MNIST: accuracy of the CNN and of logistic
-       regression when the test digits are moved off-centre by k pixels.
-       This tests the explanation for why centring helps the linear model far
-       more than the CNN.
-
-Items 1, 2 and 4 only re-read results/metrics/predictions.csv, written by
-metrics_analysis.py, so they use exactly the predictions behind the other
-tables. Items 3 and 5 load the images and the committed checkpoints and run
-inference only (no training). The whole script takes a few minutes on a
-laptop CPU.
+1, 2, 4 use results/metrics/predictions.csv from metrics_analysis.py.
+3 and 5 run the saved checkpoints (no training), a few minutes on CPU.
 
 Usage:
     python metrics_analysis.py   # first, if results/metrics/ is missing
@@ -51,23 +45,20 @@ PREDICTIONS = config.RESULTS_DIR / "metrics" / "predictions.csv"
 MODELS = ["logreg", "cnn", "aug"]
 VARIANT_ORDER = ["minimal", "thickness", "centering", "full"]
 
-# The confusions discussed in the report: (model, true digit, predicted digit).
-# They are the most frequent pairs in results/metrics/confusion_pairs.csv for
-# the CNN at minimal preprocessing, plus the dominant error of the augmented CNN.
+# (model, true, predicted) - most common errors of the CNN with minimal
+# preprocessing (confusion_pairs.csv) + the main error of the augmented CNN
 GALLERY_PAIRS = [("cnn", 6, 5), ("cnn", 7, 1), ("cnn", 1, 7), ("cnn", 9, 3),
                  ("aug", 1, 7)]
 GALLERY_PER_PAIR = 6
 
-# Shifts (pixels at 28x28) for the controlled translation test on MNIST.
+# shifts in pixels for the MNIST shift test
 SHIFTS = [0, 1, 2, 3, 4, 5, 6]
 
 
-# --------------------------------------------------------------------------
 # 1. Per-class F1
-# --------------------------------------------------------------------------
 
 def per_class_f1(pred):
-    """F1 for each digit, per (model, variant, seed), then mean and std."""
+    """F1 per digit for each (model, variant, seed), then mean/std."""
     rows = []
     for (m, v, s), g in pred.groupby(["model", "variant", "seed"]):
         f1 = f1_score(g.label, g.pred, labels=range(10), average=None,
@@ -81,15 +72,15 @@ def per_class_f1(pred):
 
 
 def fig_per_class_f1(table):
-    """One heatmap per model: rows = preprocessing variant, columns = digit."""
+    """Heatmap per model: variant x digit."""
     fig, axes = plt.subplots(1, len(MODELS), figsize=(13, 2.9),
                              constrained_layout=True)
     for ax, m in zip(axes, MODELS):
         sub = table[table.model == m].pivot(index="variant", columns="digit",
                                             values="f1_mean")
         sub = sub.loc[VARIANT_ORDER]
-        # A common colour scale per model would hide the CNN's differences
-        # (all close to 1); each panel uses its own range and prints values.
+        # separate color range per panel, otherwise all CNN cells look
+        # the same (all close to 1)
         im = ax.imshow(sub.to_numpy(), cmap="Blues",
                        vmin=sub.to_numpy().min(), vmax=1)
         ax.grid(False)
@@ -112,15 +103,12 @@ def fig_per_class_f1(table):
     return plotting.save(fig, FIG_DIR / "per_class_f1")
 
 
-# --------------------------------------------------------------------------
 # 2. Confusions: minimal vs. full
-# --------------------------------------------------------------------------
 
 def confusion_change(pred):
     """
-    Errors per seed for every (true, predicted) pair at minimal and at full
-    preprocessing. "status" says whether full preprocessing removed the pair,
-    reduced it, left it, or introduced it.
+    Errors per seed for each (true, predicted) pair, minimal vs. full.
+    status = removed / reduced / unchanged or worse / new.
     """
     wrong = pred[~pred.correct & pred.variant.isin(["minimal", "full"])]
     n_seeds = pred.groupby("model")["seed"].nunique()
@@ -137,7 +125,6 @@ def confusion_change(pred):
                                   "full": "errors_full"})
 
     def status(row):
-        """Classify how full preprocessing changed one confusion pair."""
         if row.errors_minimal == 0:
             return "new"
         if row.errors_full == 0:
@@ -152,29 +139,25 @@ def confusion_change(pred):
                              ascending=[True, False])
 
 
-# --------------------------------------------------------------------------
 # 3. Gallery of the main confusions
-# --------------------------------------------------------------------------
 
 def to_display(img28):
-    """Undo the MNIST standardisation so the image shows as 0..1."""
+    """Undo the normalization for display (0..1)."""
     return np.clip(img28 * config.MNIST_STD + config.MNIST_MEAN, 0, 1)
 
 
 def fig_confusion_gallery(pred, raw):
     """
-    For each pair in GALLERY_PAIRS, up to GALLERY_PER_PAIR images that seed 42
-    gets wrong in that way. Each example is shown three times: the raw
-    drawing, the minimal-preprocessing input and the full-preprocessing input,
-    with the seed-42 prediction under the last two.
+    Up to GALLERY_PER_PAIR examples for each pair in GALLERY_PAIRS (seed 42).
+    Each column: raw drawing, minimal input, full input + predictions.
     """
     seed = config.SEED
     p42 = pred[pred.seed == seed].set_index(["model", "variant", "image"])
-    columns = []          # one column per example: [raw, minimal, full]
+    columns = []          # [raw, minimal, full] per example
     captions = []
     for m, true, wrong in GALLERY_PAIRS:
-        # The augmented CNN's 1 -> 7 error is shown at full preprocessing,
-        # where it persists; the CNN pairs at minimal, where they occur.
+        # aug 1->7 is shown with full preprocessing (it stays there),
+        # CNN errors with minimal
         variant = "full" if m == "aug" else "minimal"
         sub = pred[(pred.seed == seed) & (pred.model == m)
                    & (pred.variant == variant)
@@ -212,27 +195,23 @@ def fig_confusion_gallery(pred, raw):
     return plotting.save(fig, FIG_DIR / "confusion_gallery")
 
 
-# --------------------------------------------------------------------------
-# 4. "1" read as "7", by writer
-# --------------------------------------------------------------------------
+# 4. "1" predicted as "7", per writer
 
 def ones_as_sevens(pred):
-    """Share of each writer's "1"s predicted as "7", per model and variant."""
+    """Fraction of each writer's "1"s predicted as "7"."""
     ones = pred[pred.label == 1]
     table = (ones.assign(as_seven=ones.pred == 7)
              .groupby(["model", "variant", "writer"])["as_seven"]
              .agg(share_as_seven="mean", n="size").reset_index())
-    # n counts images x seeds; report images per writer instead.
+    # n is images x seeds, we want images
     table["n"] = table["n"] // pred.seed.nunique()
     return table
 
 
-# --------------------------------------------------------------------------
-# 5. Controlled shift test on MNIST
-# --------------------------------------------------------------------------
+# 5. Shift test on MNIST
 
 def shift(images, dx, dy):
-    """Move every image by (dx, dy) pixels, filling with black (no wrap)."""
+    """Shift images by (dx, dy), fill with black."""
     out = np.zeros_like(images)
     h, w = images.shape[1:]
     src_y = slice(max(0, -dy), h - max(0, dy))
@@ -245,10 +224,8 @@ def shift(images, dx, dy):
 
 def shift_sensitivity(seeds):
     """
-    Accuracy on the MNIST test set when every digit is shifted by k pixels.
-
-    Each shift is applied in the four axis directions (right, left, down, up)
-    and the four accuracies are averaged, so no direction is favoured.
+    MNIST test accuracy with digits shifted by k pixels. Average of the
+    4 directions (right, left, down, up).
     """
     images, labels = load_mnist(train=False)
     rows = []
@@ -273,7 +250,7 @@ def shift_sensitivity(seeds):
 
 
 def fig_shift(table):
-    """Accuracy vs. shift for both models, mean and std over seeds."""
+    """Accuracy vs. shift, mean/std over seeds."""
     summary = (table.groupby(["model", "shift_px"])["accuracy"]
                .agg(["mean", "std"]).reset_index())
     fig, ax = plt.subplots(figsize=(5.2, 3.4))
@@ -290,10 +267,7 @@ def fig_shift(table):
     return plotting.save(fig, FIG_DIR / "shift_sensitivity")
 
 
-# --------------------------------------------------------------------------
-
 def main():
-    """Compute every table and figure listed in the module docstring."""
     if not PREDICTIONS.exists():
         raise SystemExit(f"{PREDICTIONS} not found. "
                          "Run `python metrics_analysis.py` first.")
@@ -311,7 +285,7 @@ def main():
     ones_as_sevens(pred).to_csv(OUT_DIR / "ones_as_sevens.csv", index=False)
 
     raw, labels, _ = load_target(synthetic=False)
-    # predictions.csv indexes images in load_target() order; check it matches.
+    # predictions.csv uses the load_target() order, make sure it matches
     first = pred[(pred.model == "cnn") & (pred.variant == "minimal")
                  & (pred.seed == seeds[0])].sort_values("image")
     assert np.array_equal(first.label.to_numpy(), labels), \

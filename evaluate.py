@@ -1,11 +1,6 @@
 """
-Metrics, seed aggregation and confusion matrices.
-
-Owner: Kirill Riabkov (person C).
-
-Reported metrics: accuracy, macro-F1 and per-class F1. Every configuration
-is run with 3 seeds and reported as mean +/- std, so that differences between
-variants can be told apart from run-to-run noise.
+Metrics (accuracy, macro-F1, per-class F1), averaging over seeds,
+confusion matrices, and the statistics used by metrics_analysis.py.
 """
 
 import numpy as np
@@ -17,7 +12,7 @@ from model import predict_batch
 
 
 def compute_metrics(y_true, y_pred) -> dict:
-    """Accuracy, macro-F1 and the ten per-class F1 scores."""
+    """Accuracy, macro-F1 and F1 for each digit."""
     per_class = f1_score(y_true, y_pred, labels=range(10), average=None,
                          zero_division=0)
     metrics = {
@@ -32,29 +27,17 @@ def compute_metrics(y_true, y_pred) -> dict:
 
 
 def evaluate(model, images, labels) -> dict:
-    """
-    Return a dict of metrics for one model/dataset pair.
-
-    Args:
-        model: a trained DigitCNN.
-        images: float32 (N, 28, 28), already preprocessed.
-        labels: int (N,).
-    """
+    """Metrics for a CNN on preprocessed images (N, 28, 28)."""
     preds, _ = predict_batch(model, images)
     return compute_metrics(labels, preds)
 
 
 def summarise(runs: pd.DataFrame, group_cols, metric_cols=None) -> pd.DataFrame:
     """
-    Collapse per-seed rows into mean and std per configuration.
+    Per-seed rows -> mean and std per configuration.
 
-    Args:
-        runs: one row per (configuration, seed).
-        group_cols: columns identifying a configuration, e.g. ["variant"].
-
-    Returns:
-        One row per configuration with <metric>_mean and <metric>_std columns
-        and the number of seeds that went into it.
+    group_cols are the columns that define a configuration, e.g. ["variant"].
+    Output has <metric>_mean, <metric>_std and the number of seeds.
     """
     metric_cols = metric_cols or ["accuracy", "macro_f1"]
     grouped = runs.groupby(group_cols, sort=False)
@@ -65,42 +48,31 @@ def summarise(runs: pd.DataFrame, group_cols, metric_cols=None) -> pd.DataFrame:
 
 
 def save_confusion_matrix(y_true, y_pred, title, path):
-    """Plot a row-normalised confusion matrix and save it to path."""
     cm = confusion_matrix(y_true, y_pred, labels=range(10))
     plotting.confusion(cm, title, path)
     return cm
 
 
-# --------------------------------------------------------------------------
-# Uncertainty and significance (used by metrics_analysis.py)
-# --------------------------------------------------------------------------
-#
-# The std over seeds above only reflects training randomness. Our test set
-# is small (807 images, one error = 0.12 points), so the choice of test
-# images is an equally important source of noise. The functions below
-# quantify it.
+# Statistics for metrics_analysis.py.
+# The std over seeds only shows training noise. The test set is small
+# (807 images, 1 error = 0.12 pp), so we also need confidence intervals
+# and paired tests.
 
 def bootstrap_accuracy_ci(correct, n_boot=2000, level=0.95, seed=0):
     """
-    Percentile bootstrap confidence interval for accuracy.
+    Bootstrap (percentile) CI for accuracy.
 
-    Args:
-        correct: bool array (n_images,) for one model, or (n_seeds, n_images)
-                 for several seeds evaluated on the SAME images. Images are
-                 resampled together across seeds, so the interval covers the
-                 test-set sampling noise of the seed-averaged accuracy.
-        n_boot: number of bootstrap resamples.
-        level: confidence level.
-        seed: random seed, for reproducibility.
+    correct: bool array (n_images,) or (n_seeds, n_images). With several
+    seeds the same images are resampled for all of them, and the interval
+    is for the accuracy averaged over seeds.
 
-    Returns:
-        (low, high) bounds of the interval.
+    Returns (low, high).
     """
     correct = np.atleast_2d(np.asarray(correct, dtype=float))
     n = correct.shape[1]
     rng = np.random.default_rng(seed)
     idx = rng.integers(0, n, size=(n_boot, n))
-    # Accuracy of each resample, averaged over seeds.
+    # accuracy of each resample, mean over seeds
     stats = correct[:, idx].mean(axis=(0, 2))
     alpha = (1 - level) / 2
     return float(np.quantile(stats, alpha)), float(np.quantile(stats, 1 - alpha))
@@ -108,15 +80,10 @@ def bootstrap_accuracy_ci(correct, n_boot=2000, level=0.95, seed=0):
 
 def mcnemar_test(correct_a, correct_b):
     """
-    Exact McNemar test for two classifiers evaluated on the same images.
+    Exact McNemar test for two models on the same images.
 
-    Only the discordant images matter: b = A right and B wrong,
-    c = A wrong and B right. Under the null hypothesis (equal accuracy)
-    each discordant image is a fair coin flip, so the p-value is a two-sided
-    binomial test of b against n = b + c.
-
-    Returns:
-        dict with b, c and the two-sided p-value.
+    b = A right, B wrong; c = A wrong, B right. If both models are equally
+    good, b ~ Binomial(b + c, 0.5), so we do a two-sided binomial test.
     """
     from scipy.stats import binomtest
 
@@ -130,10 +97,10 @@ def mcnemar_test(correct_a, correct_b):
 
 def gap_closed(acc_variant, acc_minimal, acc_source):
     """
-    Share of the domain gap closed by a mitigation.
+    How much of the domain gap a variant closes.
 
-    0 = no better than minimal preprocessing, 1 = back to the accuracy on the
-    source domain (MNIST test), above 1 = better than on MNIST.
+    0 = same as minimal preprocessing, 1 = as good as on MNIST test,
+    > 1 = better than MNIST.
     """
     gap = acc_source - acc_minimal
     return float("nan") if gap == 0 else (acc_variant - acc_minimal) / gap
@@ -141,11 +108,9 @@ def gap_closed(acc_variant, acc_minimal, acc_source):
 
 def rule_of_three_upper(errors, n):
     """
-    Approximate 95% upper bound on the error rate.
+    Approx. 95% upper bound on the error rate.
 
-    With zero errors in n images the usual interval collapses to 0; the
-    "rule of three" gives 3/n instead. With errors > 0 a Wilson upper bound
-    is used.
+    0 errors -> rule of three (3/n), otherwise Wilson upper bound.
     """
     if n == 0:
         return float("nan")

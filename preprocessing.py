@@ -1,16 +1,11 @@
 """
-Preprocessing pipeline: raw in-air drawing -> MNIST-like 28x28 image.
+Preprocessing: raw air drawing -> 28x28 MNIST-like image.
 
-Owner: Kirill Riabkov (person C).
+Each step can be turned on/off separately, because the ablation needs to
+measure them one by one. preprocess() gets a list of step names and always
+runs them in the order of ALL_STEPS.
 
-The design requirement that matters: every step is switchable independently.
-The ablation study measures what each step contributes on its own, which is
-impossible if the steps are fused into one monolithic function. preprocess()
-therefore takes a list of step names, and the order in which enabled steps
-run is fixed here so that results never depend on how the list was written.
-
-The module also contains augment(), the training-time distortion used to
-test whether the domain gap can be closed without seeing any target data.
+augment() (training-time augmentation) is also here.
 """
 
 import cv2
@@ -18,43 +13,36 @@ import numpy as np
 
 import config
 
-# Step names accepted by preprocess(), in the order they are applied.
+# Available steps, in the order they are applied.
 ALL_STEPS = [
-    "binarize",             # threshold to pure black and white
-    "normalize_thickness",  # skeletonise, then redraw at a constant width
-    "resize_padded",        # scale to 20x20 preserving aspect, pad to 28x28
-    "center_by_mass",       # move the centre of mass to the image centre
-    "normalize_pixels",     # standardise with MNIST mean / std
+    "binarize",             # Otsu threshold
+    "normalize_thickness",  # make the stroke width relative to digit size
+    "resize_padded",        # fit into 20x20 keeping aspect ratio, pad to 28x28
+    "center_by_mass",       # move center of mass to the middle
+    "normalize_pixels",     # MNIST mean/std
 ]
 
-# Minimal pipeline used to measure the raw domain gap. Anything more would
-# already be a mitigation and would understate the gap. normalize_pixels is
-# not a mitigation: the network was trained on standardised inputs, so
-# leaving it out would only measure a scaling bug.
+# Used to measure the raw domain gap, so no mitigation steps here.
+# normalize_pixels stays because the network was trained on normalized input.
 MINIMAL_STEPS = ["resize_padded", "normalize_pixels"]
 
-# Every step enabled.
 FULL_STEPS = list(ALL_STEPS)
 
-# Stroke width after normalisation, as a fraction of the larger side of the
-# digit's bounding box. MNIST strokes are roughly 2-3 px in a 20 px box,
-# i.e. about 12 % of the box; this value reproduces that after resizing.
+# Target stroke width as a fraction of the longer side of the bounding box.
+# MNIST strokes are about 2-3 px in a 20 px box, so ~0.12.
 TARGET_STROKE_RATIO = 0.12
 
 
-# --------------------------------------------------------------------------
-# Individual steps. Each takes and returns a uint8 image, white on black,
-# except normalize_pixels which produces the final float32 array.
-# --------------------------------------------------------------------------
+# Steps. All take and return uint8 images (white on black), except
+# normalize_pixels which returns float32.
 
 def binarize(img):
-    """Threshold with Otsu's method, which picks the cut-off automatically."""
     _, out = cv2.threshold(img, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     return out
 
 
 def _bounding_box(img):
-    """(y0, y1, x0, x1) of all non-zero pixels, or None for an empty image."""
+    """(y0, y1, x0, x1) of non-zero pixels, None if the image is empty."""
     ys, xs = np.nonzero(img)
     if len(ys) == 0:
         return None
@@ -63,12 +51,10 @@ def _bounding_box(img):
 
 def skeletonize(img):
     """
-    Morphological skeleton (Lantuejoul's method) using only OpenCV.
+    Morphological skeleton (Lantuejoul), OpenCV only.
 
-    Repeatedly erodes the shape; at every step the pixels that an opening
-    would remove are part of the skeleton. The result is a one-pixel-wide
-    centre line that no longer carries any information about the original
-    stroke width - which is exactly what we want to normalise away.
+    Erode repeatedly and collect what an opening removes at each step.
+    Gives a 1 px wide center line.
     """
     binary = (img > 127).astype(np.uint8) * 255
     skeleton = np.zeros_like(binary)
@@ -84,12 +70,10 @@ def skeletonize(img):
 
 def estimate_stroke_width(img):
     """
-    Typical stroke width of a binary drawing, in pixels.
+    Stroke width in pixels.
 
-    The distance transform gives, for every ink pixel, the distance to the
-    nearest background pixel. On the skeleton - the centre line of the
-    stroke - that distance is half of the local stroke width, so twice its
-    median is a robust estimate of the overall width.
+    On the skeleton, the distance transform equals half of the local
+    stroke width, so we take 2 * median.
     """
     binary = (img > 127).astype(np.uint8) * 255
     if not binary.any():
@@ -101,16 +85,12 @@ def estimate_stroke_width(img):
 
 def normalize_thickness(img):
     """
-    Give every drawing the same relative stroke width.
+    Erode or dilate so the stroke width is TARGET_STROKE_RATIO of the digit
+    size.
 
-    In-air strokes are thick and uneven (the finger speeds up and slows
-    down). We measure the current width and then erode or dilate the drawing
-    so that it becomes a fixed fraction of the digit's size; after resizing
-    to 20x20 this matches typical MNIST strokes.
-
-    Eroding or dilating the existing shape (rather than redrawing its
-    skeleton) keeps the outline smooth: a morphological skeleton has small
-    spurs that would turn into visible blobs when thickened again.
+    We erode/dilate the original shape instead of redrawing the skeleton,
+    because the skeleton has small spurs that turn into blobs when made
+    thicker.
     """
     box = _bounding_box(img)
     if box is None:
@@ -121,16 +101,16 @@ def normalize_thickness(img):
     binary = (img > 127).astype(np.uint8) * 255
     current = estimate_stroke_width(binary)
     target = TARGET_STROKE_RATIO * longest
-    diff = int(round(current - target))         # > 0: too thick
+    diff = int(round(current - target))         # > 0 means too thick
     if abs(diff) < 2:
-        return binary                           # already close enough
+        return binary
 
     size = abs(diff) + 1
     disc = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (size, size))
     if diff > 0:
         thinner = cv2.erode(binary, disc)
-        # Erosion can wipe out parts of the digit that were drawn thinner
-        # than the rest. If too much ink disappears, thin more gently.
+        # thin parts of the digit can disappear completely, so if we lose
+        # too much ink use a smaller kernel
         while (cv2.countNonZero(thinner) < 0.25 * cv2.countNonZero(binary)
                and size > 2):
             size -= 2
@@ -144,10 +124,8 @@ def resize_padded(img):
     """
     Crop to the digit, scale the longer side to 20 px, paste into 28x28.
 
-    Preserving the aspect ratio matters: a "1" stretched to a square would
-    look nothing like an MNIST "1". INTER_AREA is used because it averages
-    pixels when shrinking, producing the soft anti-aliased edges that MNIST
-    digits also have.
+    Keeps the aspect ratio (otherwise a "1" gets stretched into a block).
+    INTER_AREA gives soft edges similar to MNIST.
     """
     size, box_size = config.IMG_SIZE, config.DIGIT_BOX
     box = _bounding_box(img)
@@ -162,8 +140,7 @@ def resize_padded(img):
     new_w = max(1, int(round(w * scale)))
     small = cv2.resize(crop, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
-    # Centre the bounding box geometrically. center_by_mass, if enabled,
-    # refines this afterwards.
+    # center the bounding box (center_by_mass can fix it later)
     out = np.zeros((size, size), dtype=np.uint8)
     top = (size - new_h) // 2
     left = (size - new_w) // 2
@@ -173,11 +150,9 @@ def resize_padded(img):
 
 def center_by_mass(img):
     """
-    Shift the image so that its centre of mass sits at the image centre.
+    Shift the image so the center of mass is in the middle.
 
-    This is the second half of the original MNIST normalisation procedure
-    (LeCun et al., 1998). Without it, a digit with a long tail (a "7" or a
-    "9") sits off-centre compared with the training data.
+    Same as in the original MNIST (LeCun et al., 1998).
     """
     total = img.sum()
     if total == 0:
@@ -192,14 +167,10 @@ def center_by_mass(img):
 
 
 def normalize_pixels(img):
-    """Scale to [0, 1] and standardise exactly like the training data."""
+    """Scale to [0, 1] and normalize with MNIST mean/std."""
     x = img.astype(np.float32) / 255.0
     return (x - config.MNIST_MEAN) / config.MNIST_STD
 
-
-# --------------------------------------------------------------------------
-# The configurable pipeline
-# --------------------------------------------------------------------------
 
 _STEP_FUNCTIONS = {
     "binarize": binarize,
@@ -212,36 +183,31 @@ _STEP_FUNCTIONS = {
 
 def preprocess(img: np.ndarray, steps: list[str]) -> np.ndarray:
     """
-    Convert a raw drawing into a model-ready image.
+    Run the selected steps on a raw drawing.
 
-    Args:
-        img: grayscale uint8 array of arbitrary size, white strokes on black,
-             exactly as written by collect_data.py.
-        steps: subset of ALL_STEPS to apply. Order in the list is ignored;
-               enabled steps always run in the order of ALL_STEPS.
+    img: grayscale uint8, any size, white on black (as saved by
+         collect_data.py).
+    steps: subset of ALL_STEPS, order doesn't matter.
 
-    Returns:
-        float32 array of shape (IMG_SIZE, IMG_SIZE). If normalize_pixels is
-        enabled the values are MNIST-standardised, otherwise in [0, 1].
+    Returns float32 28x28 - normalized if normalize_pixels is on, otherwise
+    in [0, 1].
     """
     unknown = set(steps) - set(ALL_STEPS)
     if unknown:
         raise ValueError(f"unknown preprocessing steps: {sorted(unknown)}")
 
     out = img
-    if out.ndim == 3:                       # tolerate colour PNGs
+    if out.ndim == 3:                       # in case of a color png
         out = cv2.cvtColor(out, cv2.COLOR_BGR2GRAY)
     out = out.astype(np.uint8)
 
     for name in ALL_STEPS:
         if name == "normalize_pixels":
-            continue                        # applied last, below
+            continue                        # done at the end
         if name in steps:
             out = _STEP_FUNCTIONS[name](out)
 
-    # Whatever happened above, the model needs exactly 28x28. Without
-    # resize_padded the drawing is simply squashed to that size - that is
-    # the "naive" baseline, and it is only used if explicitly requested.
+    # without resize_padded the image is just squashed to 28x28
     if out.shape != (config.IMG_SIZE, config.IMG_SIZE):
         out = cv2.resize(out, (config.IMG_SIZE, config.IMG_SIZE),
                          interpolation=cv2.INTER_AREA)
@@ -252,21 +218,18 @@ def preprocess(img: np.ndarray, steps: list[str]) -> np.ndarray:
 
 
 def preprocess_many(images, steps):
-    """Apply preprocess() to a list of raw images; returns (N, 28, 28)."""
+    """preprocess() for a list of images -> (N, 28, 28)"""
     return np.stack([preprocess(im, steps) for im in images]).astype(np.float32)
 
 
-# --------------------------------------------------------------------------
-# Training-time augmentation
-# --------------------------------------------------------------------------
+# Augmentation (training only)
 
 def elastic_deform(img, rng, alpha=34.0, sigma=4.0):
     """
-    Elastic distortion as described by Simard et al. (2003).
+    Elastic distortion (Simard et al., 2003).
 
-    A random displacement field is smoothed with a Gaussian and scaled by
-    alpha. It imitates the small, local wobbles of a hand-drawn stroke - and
-    in our case, of a trembling finger in mid-air.
+    Random displacement field, smoothed with a Gaussian and scaled by alpha.
+    Simulates small wobbles of the stroke.
     """
     h, w = img.shape
     dx = rng.uniform(-1, 1, size=(h, w)).astype(np.float32)
@@ -281,27 +244,21 @@ def elastic_deform(img, rng, alpha=34.0, sigma=4.0):
 
 def augment(img: np.ndarray, rng: np.random.Generator) -> np.ndarray:
     """
-    Random training-time distortion: dilation, rotation, shift, elastic warp.
+    Random augmentation of one uint8 28x28 MNIST image.
 
-    Args:
-        img: one MNIST image, uint8, 28x28.
-        rng: numpy random generator (seeded by the caller for reproducibility).
-
-    Returns:
-        A distorted uint8 28x28 image.
-
-    Each distortion targets one of the differences we expect between MNIST
-    and in-air digits: thicker strokes (dilation), a tilted hand (rotation),
-    imprecise placement (shift and scale) and tremor (elastic warp).
+    dilation   - thicker strokes
+    rotation   - tilted hand
+    shift/scale - digit not placed precisely
+    elastic    - tremor
     """
     out = img
 
-    # Thicker strokes, half of the time.
+    # thicker strokes, 50% of the time
     if rng.random() < 0.5:
         k = int(rng.integers(2, 4))                 # 2x2 or 3x3
         out = cv2.dilate(out, np.ones((k, k), np.uint8))
 
-    # Rotation +-10 degrees, scale 0.9-1.1, shift +-2 px, in one affine warp.
+    # rotation +-10 deg, scale 0.9-1.1, shift +-2 px
     angle = rng.uniform(-10, 10)
     scale = rng.uniform(0.9, 1.1)
     centre = (config.IMG_SIZE / 2, config.IMG_SIZE / 2)
@@ -310,7 +267,7 @@ def augment(img: np.ndarray, rng: np.random.Generator) -> np.ndarray:
     out = cv2.warpAffine(out, matrix, (config.IMG_SIZE, config.IMG_SIZE),
                          flags=cv2.INTER_LINEAR, borderValue=0)
 
-    # Elastic tremor, half of the time.
+    # elastic, 50% of the time
     if rng.random() < 0.5:
         out = elastic_deform(out, rng)
 

@@ -1,14 +1,12 @@
 """
-Summary figures, domain statistics and the headline numbers.
-
-Owner: person D.
+Figures, domain statistics and the main numbers (headline.json).
 
 Usage:
     python analysis.py                 # after train.py and ablation.py
-    python analysis.py --synthetic     # figures for the stand-in data
+    python analysis.py --synthetic     # for the synthetic data
 
-Reads the CSVs written by train.py and ablation.py - it never recomputes a
-model result itself - so the figures and the report cannot drift apart.
+Model results are read from the CSVs written by train.py and ablation.py,
+nothing is recomputed here.
 
 Figures (figures/):
     learning_curves          CNN and augmented CNN on MNIST
@@ -44,26 +42,20 @@ MNIST_SAMPLE = 2000      # MNIST images used for the distribution plots
 
 
 def to_display(x):
-    """Undo standardisation so a preprocessed image can be shown."""
+    """Undo the normalization so the image can be displayed."""
     return np.clip(x * config.MNIST_STD + config.MNIST_MEAN, 0, 1)
 
 
-# --------------------------------------------------------------------------
-# Domain statistics: how do the two kinds of digits differ?
-# --------------------------------------------------------------------------
+# Domain statistics (MNIST vs. ours)
 
 def stroke_width(img01):
     """
-    Average stroke width in pixels of a 28x28 image in [0, 1].
+    Mean stroke width (px) of a 28x28 image in [0, 1].
 
-    The distance transform gives, for every ink pixel, the distance to the
-    nearest background pixel; on the skeleton (the stroke's centre line)
-    that is half the local stroke width.
+    Distance transform on the skeleton = half of the stroke width.
     """
-    # Measured on a 4x enlarged copy: at 28x28 the distance transform can
-    # only return a handful of distinct values, which makes the histogram
-    # look spiky. The result is divided by 4 again, so it is still in 28x28
-    # pixels.
+    # computed on a 4x bigger image - at 28x28 there are only a few possible
+    # values and the histogram looks bad. Divided by 4 at the end.
     big = cv2.resize(img01.astype(np.float32), None, fx=4, fy=4,
                      interpolation=cv2.INTER_LINEAR)
     binary = (big > 0.5).astype(np.uint8) * 255
@@ -75,12 +67,12 @@ def stroke_width(img01):
 
 
 def fill_ratio(img01):
-    """Share of the 28x28 image covered by ink."""
+    """Fraction of pixels that are ink."""
     return float((img01 > 0.5).mean())
 
 
 def domain_statistics(mnist_imgs, ours, writers):
-    """Stroke width and fill ratio for MNIST and for each writer."""
+    """Stroke width and fill ratio for MNIST and each writer."""
     rows = []
     for img in mnist_imgs:
         rows.append({"domain": "MNIST", "writer": "MNIST",
@@ -93,12 +85,10 @@ def domain_statistics(mnist_imgs, ours, writers):
     return pd.DataFrame(rows)
 
 
-# --------------------------------------------------------------------------
 # Figures
-# --------------------------------------------------------------------------
 
 def fig_learning_curves():
-    """Validation accuracy per epoch for the CNN and the augmented CNN (3 seeds)."""
+    """Learning curves of the CNN and augmented CNN (3 seeds)."""
     histories = {}
     for tag, label in (("mnist", "CNN"), ("aug", "CNN + augmentation")):
         runs = [pd.read_csv(p) for p in
@@ -111,7 +101,7 @@ def fig_learning_curves():
 
 
 def fig_samples(mnist_x, mnist_y, ours01, labels, writers):
-    """One row for MNIST, one per writer; columns are digits 0-9."""
+    """Rows: MNIST + each writer, columns: digits 0-9."""
     rows, names = [], []
     rows.append([mnist_x[np.flatnonzero(mnist_y == d)[0]] for d in range(10)])
     names.append("MNIST")
@@ -128,7 +118,7 @@ def fig_samples(mnist_x, mnist_y, ours01, labels, writers):
 
 
 def fig_preprocessing_steps(raw, labels):
-    """Each row: one drawing, progressively more steps enabled."""
+    """A few drawings with more and more preprocessing steps."""
     stages = [
         ("raw", None),
         ("minimal", MINIMAL_STEPS),
@@ -156,7 +146,7 @@ def fig_preprocessing_steps(raw, labels):
 
 
 def fig_augmentation(mnist_x):
-    """A few MNIST digits next to randomly augmented copies of them."""
+    """MNIST digits and 9 augmented versions of each."""
     rng = np.random.default_rng(config.SEED)
     rows = []
     for img in mnist_x[:3]:
@@ -168,7 +158,7 @@ def fig_augmentation(mnist_x):
 
 
 def fig_domain(stats, writers):
-    """Stroke width and fill ratio distributions: MNIST vs. each writer."""
+    """Histograms of stroke width and fill ratio, MNIST vs. writers."""
     colours = [plotting.GREY] + [plotting.writer_colours(writers)[w]
                                  for w in sorted(set(writers))]
     for metric, label, name in (
@@ -185,9 +175,9 @@ def fig_domain(stats, writers):
 
 
 def fig_ablation(summary, mnist_acc):
-    """Main result chart: what each mitigation recovers."""
+    """Main result: accuracy for each mitigation."""
     def pick(model, variant, experiment="zero_shot", stage="-"):
-        """Mean and std accuracy of one configuration from the summary table."""
+        # one row of the summary table, or None
         row = summary[(summary.experiment == experiment)
                       & (summary.model == model)
                       & (summary.variant == variant)
@@ -229,7 +219,7 @@ def fig_ablation(summary, mnist_acc):
 
 
 def fig_lowo():
-    """Leave-one-writer-out accuracy before and after fine-tuning."""
+    """LOWO accuracy before/after fine-tuning."""
     path = config.RESULTS_DIR / "lowo_summary.csv"
     if not path.exists():
         return
@@ -248,9 +238,9 @@ def fig_lowo():
 
 
 def write_headline(summary, mnist_runs):
-    """The few numbers quoted in the abstract, written by code."""
+    """Main numbers for the report -> headline.json"""
     def mean_acc(model, variant, experiment="zero_shot", stage="-"):
-        """Mean accuracy of one configuration, or None if it was not run."""
+        # mean accuracy, or None if this config wasn't run
         row = summary[(summary.experiment == experiment)
                       & (summary.model == model)
                       & (summary.variant == variant)
@@ -278,15 +268,14 @@ def write_headline(summary, mnist_runs):
 
 
 def main():
-    """Compute domain statistics, draw every figure, write headline.json."""
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("--synthetic", action="store_true")
     parser.add_argument("--quick", action="store_true")
     args = parser.parse_args()
 
-    # Model-level results (MNIST) live in the base folder; target-domain
-    # results in the synthetic sub-folder when --synthetic is given.
+    # MNIST results are always in the main folder, results on our data go
+    # to the synthetic/ subfolder with --synthetic
     if args.quick:
         config.redirect_outputs("smoke")
     mnist_runs = pd.read_csv(config.RESULTS_DIR / "mnist_test_runs.csv")
@@ -298,7 +287,7 @@ def main():
 
     mnist_x, mnist_y = load_mnist(train=False)
     raw, labels, writers = load_target(args.synthetic)
-    ours01 = preprocess_many(raw, ["resize_padded"])   # [0, 1], for display
+    ours01 = preprocess_many(raw, ["resize_padded"])   # [0, 1], for plots
 
     print("figures: samples, preprocessing, augmentation")
     fig_samples(mnist_x, mnist_y, ours01, labels, writers)

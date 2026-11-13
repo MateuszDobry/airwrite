@@ -1,41 +1,32 @@
 """
-Runs every experiment on the target domain and writes the results tables.
-
-Owner: Kirill Riabkov (person C).
+All experiments on our data. Needs the checkpoints from train.py.
 
 Usage:
-    python ablation.py                 # on our collected data (data/raw/)
-    python ablation.py --synthetic     # on the stand-in data, for testing;
+    python ablation.py                 # our data (data/raw/)
+    python ablation.py --synthetic     # synthetic data, for testing;
                                        # outputs go to results/synthetic/
 
-Requires the checkpoints produced by train.py.
+Experiments (each for every seed in config.SEEDS):
 
-Experiments (each repeated for every seed in config.SEEDS):
-
-    1. Zero-shot: MNIST-trained models on ALL our data, for every
-       preprocessing variant. The "minimal" variant measures the raw domain
-       gap - the central result. The others form the ablation:
-           minimal     resize + standardise only
-           thickness   + stroke-thickness normalisation
-           centering   + centre-of-mass alignment
+    1. Zero-shot: MNIST models on all our data, for each preprocessing
+       variant. "minimal" gives the raw domain gap.
+           minimal     resize + normalize only
+           thickness   + stroke thickness normalization
+           centering   + center of mass
            full        both
-       Models: logistic regression, CNN, CNN trained with augmentation.
-       None of these need retraining: the checkpoint is reloaded and only
-       the test-time pipeline changes.
+       Models: logistic regression, CNN, CNN with augmentation.
+       No retraining, only the test-time preprocessing changes.
 
-    2. Fine-tuning: a stratified 70/30 split of our data. The CNN is
-       evaluated on the 30% before and after fine-tuning on the 70%.
-       This is the upper bound - what a little in-domain data buys.
+    2. Fine-tuning: stratified 70/30 split of our data, CNN tested on the
+       30% before and after fine-tuning on the 70%.
 
-    3. Leave-one-writer-out: fine-tune on three writers, test on the fourth,
-       for each writer in turn. Shows whether the model generalises to a
-       writing style it has never seen.
+    3. Leave-one-writer-out: fine-tune on 3 writers, test on the 4th.
 
-Outputs (in results/):
+Outputs (results/):
     ablation_runs.csv, ablation_summary.csv     experiments 1 and 2
     lowo_runs.csv, lowo_summary.csv             experiment 3
-    per_class_f1.csv                            CNN, minimal vs. full
-and confusion matrices / misclassified galleries in figures/.
+    per_class_f1.csv                            CNN, per variant
+plus confusion matrices and misclassified examples in figures/.
 """
 
 import argparse
@@ -53,7 +44,7 @@ from model import load_model, predict_batch
 from preprocessing import preprocess_many
 from train import fine_tune, set_seed
 
-# The four test-time pipelines compared in the ablation.
+# preprocessing variants compared in the ablation
 VARIANTS = {
     "minimal": ["resize_padded", "normalize_pixels"],
     "thickness": ["binarize", "normalize_thickness", "resize_padded",
@@ -63,12 +54,12 @@ VARIANTS = {
              "center_by_mass", "normalize_pixels"],
 }
 
-# Pipeline used for the fine-tuning and cross-writer experiments.
+# variant used for fine-tuning and LOWO
 FINETUNE_VARIANT = "full"
 
 
 def logreg_predict(seed, images):
-    """Predictions of the logistic-regression baseline for this seed."""
+    """Logistic regression predictions, None if there is no model file."""
     path = config.MODELS_DIR / f"logreg_seed{seed}.joblib"
     if not path.exists():
         return None
@@ -77,7 +68,7 @@ def logreg_predict(seed, images):
 
 
 def zero_shot(prepared, labels, seeds):
-    """Experiment 1: every model x every variant, no target data seen."""
+    """Experiment 1: every model x every variant."""
     rows = []
     for seed in seeds:
         cnn = load_model("mnist", seed)
@@ -99,7 +90,7 @@ def zero_shot(prepared, labels, seeds):
 
 
 def finetune_split(x, labels, seeds):
-    """Experiment 2: stratified 70/30 split, CNN before/after fine-tuning."""
+    """Experiment 2: 70/30 split, CNN before/after fine-tuning."""
     rows = []
     for seed in seeds:
         idx_tr, idx_te = train_test_split(
@@ -126,7 +117,7 @@ def finetune_split(x, labels, seeds):
 
 
 def leave_one_writer_out(x, labels, writers, seeds):
-    """Experiment 3: fine-tune on all writers but one, test on that one."""
+    """Experiment 3: fine-tune on all writers except one, test on that one."""
     rows = []
     for held_out in sorted(set(writers)):
         test = writers == held_out
@@ -144,7 +135,7 @@ def leave_one_writer_out(x, labels, writers, seeds):
 
 
 def misclassified_gallery(raw, prepared, labels, preds, path, title, limit=30):
-    """Show the raw drawing of each mistake, captioned 'true -> predicted'."""
+    """Grid of wrong predictions, captioned 'true -> predicted'."""
     wrong = np.flatnonzero(preds != labels)[:limit]
     images = [prepared[i] for i in wrong]
     captions = [f"{labels[i]} -> {preds[i]}" for i in wrong]
@@ -152,24 +143,21 @@ def misclassified_gallery(raw, prepared, labels, preds, path, title, limit=30):
 
 
 def main():
-    """Run the zero-shot ablation, fine-tuning and LOWO; write results/."""
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("--synthetic", action="store_true",
-                        help="use the stand-in data; outputs go to */synthetic/")
+                        help="use synthetic data; outputs go to */synthetic/")
     parser.add_argument("--seeds", nargs="+", type=int,
                         default=list(config.SEEDS))
     parser.add_argument("--quick", action="store_true",
-                        help="use the smoke-test checkpoints from "
-                             "`train.py --quick`")
+                        help="use the checkpoints from `train.py --quick`")
     parser.add_argument("--skip-lowo", action="store_true")
     args = parser.parse_args()
 
     if args.quick:
         config.redirect_outputs("smoke")
     if args.synthetic:
-        # Models stay where they are (they are trained on MNIST either way);
-        # only results and figures are kept apart.
+        # models are trained on MNIST anyway, so only move results/figures
         sub = "smoke/synthetic" if args.quick else "synthetic"
         models_dir = config.MODELS_DIR
         config.redirect_outputs(sub, models=False)
@@ -181,7 +169,6 @@ def main():
     print(f"{len(raw)} images from {len(set(writers))} writers: "
           f"{dict(zip(*np.unique(writers, return_counts=True)))}")
 
-    # Every variant starts from the same raw images.
     prepared = {name: preprocess_many(raw, steps)
                 for name, steps in VARIANTS.items()}
 
@@ -196,13 +183,13 @@ def main():
     summary.to_csv(config.RESULTS_DIR / "ablation_summary.csv", index=False)
     print(summary.to_string(index=False))
 
-    # Per-class F1 of the CNN: which digits suffer most, which recover.
+    # per-class F1 of the CNN
     per_class = runs[(runs.experiment == "zero_shot") & (runs.model == "cnn")]
     f1_cols = [f"f1_{d}" for d in range(10)]
     per_class.groupby("variant", sort=False)[f1_cols].mean().to_csv(
         config.RESULTS_DIR / "per_class_f1.csv")
 
-    # Confusion matrices and mistakes for the default seed.
+    # confusion matrices + mistakes, default seed only
     cnn = load_model("mnist", config.SEED)
     for variant in ("minimal", "full"):
         preds = predict_batch(cnn, prepared[variant])[0]

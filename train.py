@@ -1,24 +1,17 @@
 """
-Training on MNIST: logistic-regression baseline, the CNN, and the CNN with
-training-time augmentation. Also provides fine_tune(), used by ablation.py
-to adapt a trained CNN to our own data.
-
-Owner: person B.
+Training on MNIST: logistic regression baseline, CNN, and CNN with
+augmentation. fine_tune() is used later by ablation.py.
 
 Usage:
-    python train.py                         # everything, 3 seeds (Colab)
+    python train.py                         # all models, 3 seeds
     python train.py --models cnn --seeds 42 # one model, one seed
-    python train.py --quick                 # 1-minute smoke test on CPU
+    python train.py --quick                 # quick test on CPU (~1 min)
 
 Outputs:
     models/cnn_mnist_seed<s>.pt, models/cnn_aug_seed<s>.pt,
     models/logreg_seed<s>.joblib
     results/history_<tag>_seed<s>.csv     learning curves
-    results/mnist_test_runs.csv           MNIST test metrics, one row per run
-
-Every run sets the seed, so results are reproducible. Every number is
-written to results/ so the report can never quote a number the code did not
-produce.
+    results/mnist_test_runs.csv           MNIST test metrics per run
 """
 
 import argparse
@@ -39,53 +32,43 @@ from model import DigitCNN, get_device, predict_batch, save_model
 from preprocessing import augment
 
 
-# --------------------------------------------------------------------------
-# Reproducibility
-# --------------------------------------------------------------------------
-
 def set_seed(seed: int):
-    """Seed every random number generator the project touches."""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
     torch.cuda.manual_seed_all(seed)
-    # Deterministic cuDNN kernels: slightly slower, but the same seed then
-    # gives the same numbers on the same hardware.
+    # deterministic cuDNN - a bit slower but runs are repeatable
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False
 
 
 def standardise(images_uint8):
-    """uint8 MNIST -> float32 standardised with the MNIST mean / std."""
+    """uint8 -> float32 normalized with MNIST mean/std"""
     x = images_uint8.astype(np.float32) / 255.0
     return (x - config.MNIST_MEAN) / config.MNIST_STD
 
 
 def split_train_val(images, labels, seed, val_size=config.VAL_SIZE):
-    """Random 54k / 6k split of the MNIST training set."""
+    """Random 54k/6k split of MNIST train."""
     rng = np.random.default_rng(seed)
     order = rng.permutation(len(images))
     val, train = order[:val_size], order[val_size:]
     return images[train], labels[train], images[val], labels[val]
 
 
-# --------------------------------------------------------------------------
-# Datasets
-# --------------------------------------------------------------------------
-
 class DigitDataset(Dataset):
     """
-    MNIST-style digits, optionally augmented on the fly.
+    MNIST images, optionally augmented.
 
-    Raw uint8 images are kept and augmentation is applied before
-    standardisation, so every epoch sees freshly distorted samples.
+    Augmentation is applied on the fly to the uint8 image (before
+    normalization), so each epoch gets different distortions.
     """
 
     def __init__(self, images_uint8, labels, augment_seed=None):
         self.images = images_uint8
         self.labels = labels
-        # One generator for the whole dataset; with num_workers=0 the
-        # sequence of distortions is fully determined by the seed.
+        # one rng for the whole dataset; with num_workers=0 this is
+        # reproducible
         self.rng = (np.random.default_rng(augment_seed)
                     if augment_seed is not None else None)
 
@@ -101,7 +84,7 @@ class DigitDataset(Dataset):
 
 
 class TensorDigits(Dataset):
-    """Already-preprocessed float32 images (used for fine-tuning)."""
+    """Already preprocessed float32 images (for fine-tuning)."""
 
     def __init__(self, images_float, labels):
         self.x = torch.from_numpy(np.asarray(images_float, dtype=np.float32))
@@ -114,17 +97,9 @@ class TensorDigits(Dataset):
         return self.x[i], self.y[i]
 
 
-# --------------------------------------------------------------------------
-# Training loop
-# --------------------------------------------------------------------------
-
 def run_epoch(model, loader, loss_fn, optimiser=None):
-    """
-    One pass over a loader. Trains if an optimiser is given, else evaluates.
-
-    Returns:
-        (mean loss, accuracy)
-    """
+    """One epoch. Trains if optimiser is given, otherwise just evaluates.
+    Returns (mean loss, accuracy)."""
     device = next(model.parameters()).device
     training = optimiser is not None
     model.train(training)
@@ -146,12 +121,7 @@ def run_epoch(model, loader, loss_fn, optimiser=None):
 
 
 def fit(model, train_loader, val_loader, epochs, lr, log_name=None):
-    """
-    Train with Adam and a cosine learning-rate schedule.
-
-    Returns:
-        the learning-curve history as a DataFrame (one row per epoch).
-    """
+    """Adam + cosine LR schedule. Returns history (one row per epoch)."""
     loss_fn = nn.CrossEntropyLoss()
     optimiser = torch.optim.Adam(model.parameters(), lr=lr)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimiser, epochs)
@@ -179,16 +149,8 @@ def fit(model, train_loader, val_loader, epochs, lr, log_name=None):
 
 def train_cnn(seed, augmented, epochs, train_subset=None):
     """
-    Train one CNN on MNIST.
-
-    Args:
-        seed: random seed (controls split, init, batches, augmentation).
-        augmented: apply augment() to every training image.
-        epochs: number of epochs.
-        train_subset: use only this many training images (smoke tests).
-
-    Returns:
-        (model, history DataFrame)
+    Train one CNN on MNIST. train_subset limits the number of training
+    images (for --quick). Returns (model, history).
     """
     set_seed(seed)
     images, labels = load_mnist(train=True)
@@ -197,7 +159,7 @@ def train_cnn(seed, augmented, epochs, train_subset=None):
         x_tr, y_tr = x_tr[:train_subset], y_tr[:train_subset]
 
     device = get_device()
-    generator = torch.Generator().manual_seed(seed)   # shuffling order
+    generator = torch.Generator().manual_seed(seed)   # shuffle order
     train_loader = DataLoader(
         DigitDataset(x_tr, y_tr, augment_seed=seed if augmented else None),
         batch_size=config.BATCH_SIZE, shuffle=True, generator=generator)
@@ -212,13 +174,7 @@ def train_cnn(seed, augmented, epochs, train_subset=None):
 
 
 def train_logreg(seed, train_subset=None):
-    """
-    Multinomial logistic regression on raw (standardised) pixels.
-
-    This baseline shows how much of MNIST accuracy comes from the
-    convolutional architecture, and - on our data - whether a linear model
-    degrades more or less than the CNN under domain shift.
-    """
+    """Logistic regression on raw normalized pixels (baseline)."""
     from sklearn.linear_model import LogisticRegression
 
     images, labels = load_mnist(train=True)
@@ -233,11 +189,10 @@ def train_logreg(seed, train_subset=None):
 def fine_tune(model, images, labels, seed, epochs=config.FINETUNE_EPOCHS,
               lr=config.FINETUNE_LR):
     """
-    Continue training a CNN on a small set of our own (preprocessed) digits.
+    Continue training on our own (preprocessed) digits.
 
-    The learning rate is ten times smaller than for MNIST training: the aim
-    is to adapt the existing features to the new domain, not to overwrite
-    them with a few hundred samples.
+    LR is 10x smaller than for MNIST - we only have a few hundred images,
+    so we want to adjust the model, not retrain it.
     """
     set_seed(seed)
     loader = DataLoader(TensorDigits(images, labels), batch_size=32,
@@ -248,16 +203,11 @@ def fine_tune(model, images, labels, seed, epochs=config.FINETUNE_EPOCHS,
     return model
 
 
-# --------------------------------------------------------------------------
-# Results bookkeeping
-# --------------------------------------------------------------------------
-
 def upsert_rows(path, new_rows, key_cols):
     """
-    Add rows to a CSV, replacing earlier rows with the same key.
+    Append rows to a CSV, replacing old rows with the same key.
 
-    Lets the script be rerun for one model or one seed without losing the
-    other results.
+    So you can rerun one model or seed without losing the rest.
     """
     new = pd.DataFrame(new_rows)
     if path.exists():
@@ -270,7 +220,6 @@ def upsert_rows(path, new_rows, key_cols):
 
 
 def main():
-    """Train the selected models for every seed and evaluate them on MNIST."""
     parser = argparse.ArgumentParser(description=__doc__,
                                      formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("--models", nargs="+", default=["logreg", "cnn", "aug"],
@@ -279,8 +228,8 @@ def main():
                         default=list(config.SEEDS))
     parser.add_argument("--epochs", type=int, default=config.EPOCHS)
     parser.add_argument("--quick", action="store_true",
-                        help="smoke test: 5k images, 1 epoch, outputs go to "
-                             "*/smoke/ so they never mix with real results")
+                        help="quick test: 5k images, 1 epoch, outputs go to "
+                             "*/smoke/")
     args = parser.parse_args()
 
     subset = None

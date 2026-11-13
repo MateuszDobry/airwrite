@@ -7,17 +7,14 @@ Technology. Deadline: **13 November 2026**.
 
 ## The question
 
-A CNN trained on MNIST reaches above 99% accuracy. Does it still work on
-digits written in the air with a finger? Those digits have uneven stroke
-width, hand tremor, distorted proportions, and unwanted connecting strokes
-because the pen cannot be lifted.
+A CNN trained on MNIST gets over 99% accuracy. Does it still work on digits
+written in the air with a finger? Those have uneven stroke width, tremor,
+weird proportions and extra connecting lines (you can't lift the pen).
 
-We measure how much accuracy is lost, then test which interventions recover
-it: stroke normalisation, centre-of-mass alignment, training-time
-augmentation, and fine-tuning.
+We measure how much accuracy drops and then try to get it back with stroke
+normalisation, centre-of-mass alignment, augmentation and fine-tuning.
 
-The gesture whiteboard is the instrument for collecting that data, not the
-project itself.
+The gesture whiteboard is just the tool we used to collect the data.
 
 ## Setup
 
@@ -54,11 +51,10 @@ python collect_data.py --writer <yourname> --per-digit 20
 ```
 
 Walks through digits 0-9. SPACE saves, `c` clears, `n` next digit, `b` back,
-`q` quits. Safe to stop and resume — numbering continues and nothing is
-overwritten.
+`q` quits. You can stop and run it again later, numbering continues and
+nothing gets overwritten.
 
-**Write naturally.** Do not imitate the MNIST style; measuring the real
-difference between the two domains is the entire point.
+Write normally, don't try to imitate MNIST.
 
 ## Experiments
 
@@ -84,8 +80,8 @@ python ablation.py --quick --synthetic
 python analysis.py --quick --synthetic
 ```
 
-`--synthetic` uses stand-in digits made by distorting MNIST. It exists only
-to test the pipeline; its numbers are **not** results.
+`--synthetic` uses fake digits made by distorting MNIST, only for testing
+the pipeline (these numbers are not results).
 
 ## Tuning
 
@@ -99,16 +95,16 @@ If the whiteboard behaves badly, adjust in `config.py`:
 
 ## Documentation
 
-- `CLAUDE.md` — project context, module contracts, current status
-- `docs/project-plan.md` — step-by-step plan across all phases
-- `docs/division-of-work.md` — who owns which files
-- `docs/SETUP_PL.md` — instalacja i zbieranie danych dla zespołu (po polsku)
-- `docs/team-tasks.md` — concrete tasks per person for the remaining days
-- `docs/remaining-work.md` — checklist for analysis, report and submission
-- `docs/analysis-notes.md` — written interpretation of the results (draft text for the report)
-- `docs/course-requirements.md` — course brief as a checklist (Polish)
-- `docs/course-brief.pdf` — the original brief
-- `docs/project_proposal.pdf` — two-page English proposal
+- `CLAUDE.md` - project context, module contracts, current status
+- `docs/project-plan.md` - step-by-step plan across all phases
+- `docs/division-of-work.md` - who owns which files
+- `docs/SETUP_PL.md` - instalacja i zbieranie danych dla zespołu (po polsku)
+- `docs/team-tasks.md` - concrete tasks per person for the remaining days
+- `docs/remaining-work.md` - checklist for analysis, report and submission
+- `docs/analysis-notes.md` - written interpretation of the results (draft text for the report)
+- `docs/course-requirements.md` - course brief as a checklist (Polish)
+- `docs/course-brief.pdf` - the original brief
+- `docs/project_proposal.pdf` - two-page English proposal
 
 ## Status
 

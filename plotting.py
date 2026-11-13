@@ -1,27 +1,18 @@
 """
-Shared figure style and plotting helpers.
+Common plot style and helper functions for all figures.
 
-Owner: person D.
-
-Every report figure goes through these functions so that colours, fonts and
-sizes are consistent. Figures are saved as PNG (for slides) and PDF (vector,
-for the report).
-
-Colour rules used throughout:
-    * one fixed colour per entity (e.g. a writer keeps its colour in every
-      figure), never re-assigned by rank;
-    * a single sequential hue (blue) for magnitudes such as confusion
-      matrices;
-    * grey for reference values (MNIST, "before" bars).
+Figures are saved as PNG and PDF. Colors: each writer always has the same
+color, blue scale for confusion matrices, grey for reference values
+(MNIST, "before").
 """
 
 import matplotlib
 
-matplotlib.use("Agg")                    # no display needed (Colab, servers)
+matplotlib.use("Agg")                    # no GUI needed
 import matplotlib.pyplot as plt          # noqa: E402
 import numpy as np                       # noqa: E402
 
-# Categorical palette, fixed order (validated for colour-vision deficiency).
+# color palette (colorblind-friendly)
 BLUE, ORANGE, AQUA, YELLOW = "#2a78d6", "#eb6834", "#1baf7a", "#eda100"
 MAGENTA, GREEN, VIOLET, RED = "#e87ba4", "#008300", "#6250d6", "#e34948"
 CATEGORICAL = [BLUE, ORANGE, AQUA, YELLOW, MAGENTA, GREEN, VIOLET, RED]
@@ -51,7 +42,7 @@ plt.rcParams.update({
 
 
 def save(fig, path):
-    """Save as PNG and PDF next to each other, then close the figure."""
+    """Save as .png and .pdf and close the figure."""
     path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(path.with_suffix(".png"))
     fig.savefig(path.with_suffix(".pdf"))
@@ -60,13 +51,13 @@ def save(fig, path):
 
 
 def writer_colours(writers):
-    """Stable writer -> colour mapping (alphabetical order of names)."""
+    """writer -> color, by alphabetical order"""
     return {w: CATEGORICAL[i % len(CATEGORICAL)]
             for i, w in enumerate(sorted(set(writers)))}
 
 
 def _show_digit(ax, img, title=None, colour=INK):
-    """Draw one grayscale digit without axes."""
+    """Show one digit image without axes."""
     ax.imshow(img, cmap="gray", interpolation="nearest")
     ax.set_xticks([])
     ax.set_yticks([])
@@ -77,15 +68,10 @@ def _show_digit(ax, img, title=None, colour=INK):
         ax.set_title(title, fontsize=8, fontweight="normal", color=colour)
 
 
-# --------------------------------------------------------------------------
-# Figure types
-# --------------------------------------------------------------------------
-
 def confusion(cm, title, path):
     """
-    Row-normalised confusion matrix: each row shows where the true digit's
-    samples went, so classes with different sample counts are comparable.
-    Raw counts are printed in the cells.
+    Confusion matrix, colors normalized per row (classes have different
+    sizes), raw counts written in the cells.
     """
     rows = cm.sum(axis=1, keepdims=True)
     norm = np.divide(cm, rows, out=np.zeros_like(cm, dtype=float),
@@ -109,11 +95,10 @@ def confusion(cm, title, path):
 
 def learning_curves(histories, path):
     """
-    Training and validation accuracy per epoch.
+    Loss and accuracy per epoch, train and val.
 
-    Args:
-        histories: dict label -> list of history DataFrames (one per seed).
-                   The line is the mean over seeds, the band is min-max.
+    histories: dict label -> list of history DataFrames (one per seed).
+    Line = mean over seeds, shaded area = min-max.
     """
     fig, axes = plt.subplots(1, 2, figsize=(9, 3.4))
     for (label, runs), colour in zip(histories.items(), CATEGORICAL):
@@ -138,9 +123,8 @@ def learning_curves(histories, path):
 def bar_with_errors(labels, means, stds, title, path, ylabel="accuracy",
                     colours=None, reference=None, reference_label=None):
     """
-    Bar chart of mean +/- std over seeds, with values written on the bars.
-
-    reference draws a dashed horizontal line, e.g. MNIST test accuracy.
+    Bars with mean +/- std over seeds. `reference` adds a dashed line
+    (e.g. MNIST test accuracy).
     """
     fig, ax = plt.subplots(figsize=(max(5, 0.9 * len(labels) + 2), 3.8))
     x = np.arange(len(labels))
@@ -166,9 +150,7 @@ def bar_with_errors(labels, means, stds, title, path, ylabel="accuracy",
 def grouped_bars(groups, series, values, errors, title, path,
                  colours=None, ylabel="accuracy"):
     """
-    Side-by-side bars: one group per entry of `groups`, one bar per series.
-
-    values / errors: arrays of shape (len(series), len(groups)).
+    Grouped bar chart. values/errors have shape (len(series), len(groups)).
     """
     colours = colours or CATEGORICAL
     n = len(series)
@@ -194,12 +176,7 @@ def grouped_bars(groups, series, values, errors, title, path,
 
 
 def distributions(data, title, xlabel, path, colours=None, bins=30):
-    """
-    Overlaid density histograms, e.g. stroke width for MNIST vs. ours.
-
-    Args:
-        data: dict label -> 1-D array of values.
-    """
+    """Overlapping histograms (density). data: dict label -> values."""
     colours = colours or [GREY] + CATEGORICAL
     fig, ax = plt.subplots(figsize=(5.5, 3.4))
     all_values = np.concatenate([np.asarray(v) for v in data.values()])
@@ -217,11 +194,8 @@ def distributions(data, title, xlabel, path, colours=None, bins=30):
 
 def digit_grid(rows, row_labels, path, title=None, cell=0.75):
     """
-    Grid of digit images.
-
-    Args:
-        rows: list of lists of 2-D images (None leaves a cell empty).
-        row_labels: text shown at the left of each row.
+    Grid of digits. rows = list of lists of images (None = empty cell),
+    row_labels are shown on the left.
     """
     n_rows, n_cols = len(rows), max(len(r) for r in rows)
     fig, axes = plt.subplots(n_rows, n_cols,
@@ -247,7 +221,7 @@ def digit_grid(rows, row_labels, path, title=None, cell=0.75):
 
 
 def gallery(images, captions, path, title=None, cols=10, caption_colour=RED):
-    """Small images with a caption each, e.g. misclassified examples."""
+    """Images with a caption under each (e.g. misclassified digits)."""
     n = len(images)
     if n == 0:
         return None

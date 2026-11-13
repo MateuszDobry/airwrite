@@ -1,27 +1,18 @@
 """
-Extended evaluation of the zero-shot results: uncertainty, significance,
-per-writer breakdown, error analysis and robustness.
+More evaluation of the zero-shot results: confidence intervals, McNemar
+tests, per-writer results, errors, sensitivity.
 
-Owner: Kirill Riabkov (person C, evaluation).
+The std over 3 seeds in ablation.py only covers training noise. We have
+807 test images (1 error = 0.12 pp), so we also need CIs and paired tests
+before saying one variant is better than another.
 
-Why this script exists
-----------------------
-ablation.py reports accuracy and macro-F1 as mean +/- std over 3 seeds.
-That std only captures training randomness. With 807 test images, one
-error is 0.12 accuracy points, so the test set itself is a large source of
-uncertainty: we need intervals and paired tests before claiming that one
-preprocessing variant beats another. This script adds that, plus the
-analyses listed in docs/remaining-work.md, section 2.
-
-It only runs inference with existing checkpoints (no training), so it takes
-a minute or two on a laptop CPU. Whatever checkpoints exist in models/ are
-used; results/metrics/checkpoints_used.csv records which ones.
+Only inference with the saved checkpoints, 1-2 min on CPU. Used
+checkpoints are listed in results/metrics/checkpoints_used.csv.
 
 Usage:
     python metrics_analysis.py            # our data, real checkpoints
-    python metrics_analysis.py --quick    # smoke-test checkpoints from
-                                          # `train.py --quick`; outputs go to
-                                          # results/smoke/metrics/
+    python metrics_analysis.py --quick    # checkpoints from train.py --quick,
+                                          # outputs in results/smoke/metrics/
 
 Outputs (results/metrics/):
     predictions.csv            one row per (model, variant, seed, image)
@@ -55,11 +46,10 @@ from evaluate import (bootstrap_accuracy_ci, gap_closed, mcnemar_test,
 from model import checkpoint_path, load_model, predict_batch
 from preprocessing import preprocess_many
 
-# Short names used in every table: model tag in models/ -> report name.
+# name in tables -> checkpoint tag
 CNN_TAGS = {"cnn": "mnist", "aug": "aug"}
 
-# Paired comparisons for McNemar's test. Each tuple is
-# ((model, variant), (model, variant)); "A" is the first, "B" the second.
+# pairs for McNemar's test: (A, B), each (model, variant)
 COMPARISONS = [
     (("cnn", "minimal"), ("cnn", "thickness")),
     (("cnn", "minimal"), ("cnn", "centering")),
@@ -71,22 +61,19 @@ COMPARISONS = [
     (("logreg", "minimal"), ("logreg", "full")),
 ]
 
-# Values of preprocessing.TARGET_STROKE_RATIO for the sensitivity curve.
-# The main results use 0.12, which was fixed before the data was collected.
-# This curve is reported as a robustness check only: picking the best value
-# from it would be tuning on the test set.
+# TARGET_STROKE_RATIO values to try. Main results use 0.12 (chosen before
+# collecting data). This is only a robustness check - choosing the best value
+# here would be tuning on the test set.
 STROKE_RATIOS = [0.06, 0.08, 0.10, 0.12, 0.14, 0.16, 0.18]
 
-# A prediction with at least this softmax probability counts as "confident".
+# softmax prob above this = "confident" prediction
 CONFIDENT = 0.9
 
 
-# --------------------------------------------------------------------------
 # Predictions
-# --------------------------------------------------------------------------
 
 def available_checkpoints(seeds):
-    """Return {(model, seed): path} for every checkpoint that exists."""
+    """{(model, seed): path} for checkpoints that exist."""
     found = {}
     for seed in seeds:
         for name, tag in CNN_TAGS.items():
@@ -101,10 +88,8 @@ def available_checkpoints(seeds):
 
 def predict_all(prepared, labels, writers, checkpoints):
     """
-    Run every available model on every preprocessing variant.
-
-    Returns a long DataFrame with one row per image and configuration,
-    including the softmax confidence of the predicted class.
+    Every model on every variant. One row per image and config, with the
+    confidence of the predicted class.
     """
     frames = []
     for (name, seed), path in sorted(checkpoints.items()):
@@ -130,17 +115,15 @@ def predict_all(prepared, labels, writers, checkpoints):
 
 
 def correct_matrix(pred, model, variant):
-    """Boolean matrix (n_seeds, n_images) of correct answers for one config."""
+    """(n_seeds, n_images) bool matrix of correct predictions."""
     sub = pred[(pred.model == model) & (pred.variant == variant)]
     return sub.pivot(index="seed", columns="image", values="correct").to_numpy()
 
 
-# --------------------------------------------------------------------------
 # Analyses
-# --------------------------------------------------------------------------
 
 def confidence_intervals(pred):
-    """Accuracy, error count and 95% bootstrap CI for every config."""
+    """Accuracy, errors and 95% bootstrap CI per config."""
     rows = []
     for (model, variant), _ in pred.groupby(["model", "variant"], sort=False):
         mat = correct_matrix(pred, model, variant)
@@ -153,10 +136,10 @@ def confidence_intervals(pred):
 
 
 def gap_table(ci, mnist_runs, pred):
-    """Share of the domain gap closed by each variant, per model."""
+    """How much of the domain gap each variant closes, per model."""
     rows = []
     for model, sub in ci.groupby("model", sort=False):
-        # MNIST accuracy over exactly the seeds evaluated on our data.
+        # MNIST accuracy for the same seeds
         seeds = set(pred.loc[pred.model == model, "seed"])
         runs = mnist_runs[(mnist_runs.model == model)
                           & mnist_runs.seed.isin(seeds)]
@@ -177,7 +160,7 @@ def gap_table(ci, mnist_runs, pred):
 
 
 def mcnemar_table(pred):
-    """McNemar's exact test for each comparison and seed."""
+    """McNemar test for each comparison and seed."""
     rows = []
     present = set(zip(pred.model, pred.variant))
     for a, b in COMPARISONS:
@@ -193,15 +176,14 @@ def mcnemar_table(pred):
                          "acc_a": ma[i].mean(), "acc_b": mb[i].mean(), **res})
     out = pd.DataFrame(rows)
     if len(out):
-        # Several comparisons per seed: Holm correction keeps the chance of
-        # any false "significant" result at 5% within each seed.
+        # Holm correction, since there are several tests per seed
         out["p_holm"] = out.groupby("seed").p_value.transform(holm)
         out["significant_5pct"] = out.p_holm < 0.05
     return out
 
 
 def holm(p):
-    """Holm-Bonferroni adjusted p-values for one family of tests."""
+    """Holm-Bonferroni adjusted p-values."""
     p = np.asarray(p, dtype=float)
     order = np.argsort(p)
     adjusted = np.empty_like(p)
@@ -213,7 +195,7 @@ def holm(p):
 
 
 def per_writer_table(pred, domain_stats):
-    """Zero-shot accuracy for each writer, joined with their stroke width."""
+    """Zero-shot accuracy per writer + their stroke width."""
     acc = (pred.groupby(["model", "variant", "writer", "seed"]).correct.mean()
            .groupby(["model", "variant", "writer"]).agg(["mean", "std"])
            .rename(columns={"mean": "accuracy_mean", "std": "accuracy_std"})
@@ -226,7 +208,7 @@ def per_writer_table(pred, domain_stats):
 
 
 def confusion_pairs(pred, top=10):
-    """Most frequent (true -> predicted) mistakes, averaged over seeds."""
+    """Most common (true -> predicted) errors, per seed."""
     wrong = pred[~pred.correct]
     seeds = pred.groupby(["model", "variant"]).seed.nunique()
     counts = (wrong.groupby(["model", "variant", "label", "pred"]).size()
@@ -242,7 +224,7 @@ def confusion_pairs(pred, top=10):
 
 
 def confidence_table(pred):
-    """How confident is each model when it is right and when it is wrong?"""
+    """Mean confidence on correct vs. wrong predictions."""
     rows = []
     for (model, variant), sub in pred.groupby(["model", "variant"], sort=False):
         wrong = sub[~sub.correct]
@@ -259,7 +241,7 @@ def confidence_table(pred):
 
 
 def stroke_ratio_sensitivity(raw, labels, checkpoints):
-    """CNN accuracy (full pipeline) for several TARGET_STROKE_RATIO values."""
+    """CNN accuracy (full preprocessing) for different TARGET_STROKE_RATIO."""
     seeds = sorted(s for (m, s) in checkpoints if m == "cnn")
     nets = {s: load_model("mnist", s) for s in seeds}
     original = preprocessing.TARGET_STROKE_RATIO
@@ -274,12 +256,12 @@ def stroke_ratio_sensitivity(raw, labels, checkpoints):
                              "accuracy": (preds == labels).mean(),
                              "used_in_main_results": ratio == original})
     finally:
-        preprocessing.TARGET_STROKE_RATIO = original   # never leak the change
+        preprocessing.TARGET_STROKE_RATIO = original   # restore
     return pd.DataFrame(rows)
 
 
 def ceiling_table():
-    """Error counts of the fine-tuning and LOWO experiments (from ablation.py)."""
+    """Error counts for fine-tuning and LOWO (from ablation.py results)."""
     rows = []
     runs_path = config.RESULTS_DIR / "ablation_runs.csv"
     if runs_path.exists():
@@ -303,17 +285,16 @@ def ceiling_table():
 
 def augmentation_stroke_width(n=2000):
     """
-    Median stroke width of MNIST test digits before and after augment().
+    Stroke width of MNIST before and after augment().
 
-    Tests the hypothesis that augmentation hurts because it makes strokes
-    thicker, while our strokes are thinner than MNIST. Returns None if MNIST
-    is not available offline.
+    Checks whether augmentation hurts because it makes the strokes thicker
+    (ours are thinner than MNIST). None if MNIST can't be loaded.
     """
     try:
         from analysis import stroke_width
         from data_utils import load_mnist
         images, _ = load_mnist(train=False)
-    except Exception as exc:                     # no MNIST, no network
+    except Exception as exc:                     # e.g. no internet
         print(f"  skipped augmentation stroke width: {exc}")
         return None
     rng = np.random.default_rng(config.SEED)
@@ -329,17 +310,14 @@ def augmentation_stroke_width(n=2000):
     })
 
 
-# --------------------------------------------------------------------------
 # Figures
-# --------------------------------------------------------------------------
 
 def make_figures(gap, writers_tab, sens, conf, fig_dir):
-    """Draw the four figures in figures/metrics/ from the computed tables."""
     import matplotlib.pyplot as plt
 
     fig_dir.mkdir(parents=True, exist_ok=True)
 
-    # Share of the domain gap closed by each preprocessing variant.
+    # gap closed per variant
     variants = [v for v in VARIANTS if v != "minimal"]
     models = [m for m in ("logreg", "cnn", "aug") if m in set(gap.model)]
     fig, ax = plt.subplots(figsize=(6.4, 3.6))
@@ -356,13 +334,13 @@ def make_figures(gap, writers_tab, sens, conf, fig_dir):
     ax.legend(frameon=False)
     plotting.save(fig, fig_dir / "gap_closed")
 
-    # Per-writer accuracy against stroke width, CNN.
+    # per-writer accuracy vs. stroke width (CNN)
     sub = writers_tab[writers_tab.model == "cnn"]
     if len(sub):
         fig, ax = plt.subplots(figsize=(5.6, 3.6))
         for variant, marker in (("minimal", "o"), ("full", "s")):
             s = sub[sub.variant == variant].sort_values("stroke_width_median")
-            # Markers only: four writers are separate points, not a curve.
+            # no line, 4 writers are separate points
             ax.plot(s.stroke_width_median, 100 * s.accuracy_mean, marker=marker,
                     ls="none", markersize=7, label=f"CNN, {variant}")
             if variant == "minimal":
@@ -377,7 +355,7 @@ def make_figures(gap, writers_tab, sens, conf, fig_dir):
         ax.legend(frameon=False)
         plotting.save(fig, fig_dir / "per_writer")
 
-    # Sensitivity to TARGET_STROKE_RATIO.
+    # TARGET_STROKE_RATIO sensitivity
     if len(sens):
         agg = sens.groupby("stroke_ratio").accuracy.agg(["mean", "std"])
         fig, ax = plt.subplots(figsize=(5.6, 3.4))
@@ -391,7 +369,7 @@ def make_figures(gap, writers_tab, sens, conf, fig_dir):
         ax.legend(frameon=False)
         plotting.save(fig, fig_dir / "stroke_ratio_sensitivity")
 
-    # Confidence on correct vs. wrong predictions.
+    # confidence, correct vs. wrong
     c = conf[conf.model.isin(["cnn", "aug"])]
     if len(c):
         labels = [f"{m}/{v}" for m, v in zip(c.model, c.variant)]
@@ -407,14 +385,11 @@ def make_figures(gap, writers_tab, sens, conf, fig_dir):
         plotting.save(fig, fig_dir / "confidence")
 
 
-# --------------------------------------------------------------------------
-
 def main():
-    """Run every analysis on the committed checkpoints and write results/metrics/."""
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument("--quick", action="store_true",
-                        help="use smoke-test checkpoints; outputs to */smoke/")
+                        help="use the --quick checkpoints, outputs to */smoke/")
     parser.add_argument("--seeds", nargs="+", type=int,
                         default=list(config.SEEDS))
     args = parser.parse_args()
