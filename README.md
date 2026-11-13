@@ -95,7 +95,6 @@ If the whiteboard behaves badly, adjust in `config.py`:
 
 ## Documentation
 
-- `CLAUDE.md` - project context, module contracts, current status
 - `docs/project-plan.md` - step-by-step plan across all phases
 - `docs/division-of-work.md` - who owns which files
 - `docs/SETUP_PL.md` - instalacja i zbieranie danych dla zespołu (po polsku)
