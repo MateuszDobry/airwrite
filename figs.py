@@ -1,7 +1,7 @@
 """
-Report figures that the team's own figure scripts do not cover in the form needed
-for the report (zoomed axes, CIs, per-writer view). Every value is read from
-the result files in data/; nothing is typed in by hand.
+Figures for the report (pipeline diagram, zoomed axes, CIs, per-writer plot).
+
+Usage: python figs.py <folder with the result csv files> <output folder>
 """
 import sys
 from pathlib import Path
@@ -17,7 +17,7 @@ D = Path(sys.argv[1])
 F = Path(sys.argv[2])
 F.mkdir(exist_ok=True, parents=True)
 
-# palette used by the team's plotting.py
+# same colors as in plotting.py
 BLUE, ORANGE, AQUA, YELLOW = "#2a78d6", "#eb6834", "#1baf7a", "#eda100"
 MAGENTA, GREEN, VIOLET, RED = "#e87ba4", "#008300", "#6250d6", "#e34948"
 GREY, INK, INK2 = "#a3a29b", "#0b0b0b", "#52514e"
@@ -31,7 +31,7 @@ plt.rcParams.update({
     "lines.linewidth": 1.8,
 })
 
-# ------------------------------------------------------------------ Fig 1: pipeline
+# Fig 1: pipeline
 fig, ax = plt.subplots(figsize=(6.6, 2.9))
 ax.set_xlim(0, 10); ax.set_ylim(0, 4.4); ax.axis("off"); ax.grid(False)
 def box(x, y, w, h, title, sub, colour):
@@ -63,7 +63,7 @@ for i in (3, 2, 1):
     arrow(xs[i] - 0.04, row2 + h / 2, xs[i - 1] + w + 0.04, row2 + h / 2)
 fig.savefig(F / "fig_pipeline.png"); plt.close(fig)
 
-# ------------------------------------------------------------------ Fig 4: learning curves
+# Fig 4: learning curves
 fig, axes = plt.subplots(1, 2, figsize=(6.6, 2.7))
 for tag, label, colour in (("mnist", "CNN", BLUE), ("aug", "CNN + augmentation", AQUA)):
     runs = [pd.read_csv(D / f"history_{tag}_seed{s}.csv") for s in (42, 43, 44)]
@@ -80,7 +80,7 @@ for ax in axes:
 axes[1].legend(fontsize=6.8, loc="lower right")
 fig.tight_layout(); fig.savefig(F / "fig_learning_curves.png"); plt.close(fig)
 
-# ------------------------------------------------------------------ Fig 5: ablation
+# Fig 5: ablation
 ci = pd.read_csv(D / "confidence_intervals.csv")
 gap = pd.read_csv(D / "gap_closed.csv")
 variants = ["minimal", "thickness", "centering", "full"]
@@ -106,7 +106,7 @@ fig.text(0.5, -0.02, "dotted line: accuracy of the same model on the MNIST test 
          "bars: 95% bootstrap CI", ha="center", fontsize=7, color=INK2)
 fig.tight_layout(); fig.savefig(F / "fig_ablation.png"); plt.close(fig)
 
-# ------------------------------------------------------------------ Fig 6: confusion matrices
+# Fig 6: confusion matrices
 fig, axes = plt.subplots(1, 2, figsize=(6.6, 3.1))
 for ax, var, title in zip(axes, ("minimal", "full"), ("minimal preprocessing", "full preprocessing")):
     cm = pd.read_csv(D / f"confusion_cnn_{var}_seed42.csv", index_col=0).values
@@ -121,7 +121,7 @@ for ax, var, title in zip(axes, ("minimal", "full"), ("minimal preprocessing", "
     ax.set_title(f"CNN, {title}\n({int((cm.sum() - np.trace(cm)))} errors of {int(cm.sum())})", fontsize=8.5)
 fig.tight_layout(); fig.savefig(F / "fig_confusion.png"); plt.close(fig)
 
-# ------------------------------------------------------------------ Fig 9: per writer
+# Fig 9: per writer
 pw = pd.read_csv(D / "per_writer.csv")
 fig, ax = plt.subplots(figsize=(4.8, 2.9))
 cols = {"kacper": BLUE, "kirill": ORANGE, "mateusz": AQUA, "roman": VIOLET}
@@ -134,7 +134,7 @@ ax.set_ylabel("accuracy, %"); ax.set_title("CNN, accuracy per writer")
 ax.legend(title="writer (median stroke width)", fontsize=7, title_fontsize=7, loc="lower right")
 fig.tight_layout(); fig.savefig(F / "fig_per_writer.png"); plt.close(fig)
 
-# ------------------------------------------------------------------ Fig 10: sensitivity
+# Fig 10: sensitivity
 sn = pd.read_csv(D / "stroke_ratio_sensitivity.csv")
 agg = sn.groupby("stroke_ratio").accuracy.agg(["mean", "std"])
 fig, ax = plt.subplots(figsize=(4.6, 2.7))

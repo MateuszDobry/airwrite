@@ -1,8 +1,8 @@
 """
-Derived numbers for the report. Reads only the team's result files (data/*.csv)
-and writes derived.json plus a few small CSVs next to it. Nothing is estimated
-by hand: every number quoted in the report that is not already in a result
-file comes from this script.
+Extra numbers for the report that are not directly in the result CSVs.
+
+Usage: python derive.py <folder with the result csv files>
+Writes derived.json and a few small CSVs into the same folder.
 """
 import json
 import sys
@@ -14,7 +14,7 @@ import pandas as pd
 D = Path(sys.argv[1])          # folder with the copied result files
 out = {}
 
-# ---------------------------------------------------------------- MNIST runs
+# MNIST runs
 m = pd.read_csv(D / "mnist_test_runs.csv")
 g = m.groupby("model")
 out["mnist"] = {
@@ -24,7 +24,7 @@ out["mnist"] = {
         "acc_per_seed": m[m.model == k].sort_values("seed").accuracy.tolist()}
     for k in ["logreg", "cnn", "aug"]}
 
-# ---------------------------------------------------------------- learning curves
+# learning curves
 hist = {}
 for tag in ["mnist", "aug"]:
     runs = [pd.read_csv(D / f"history_{tag}_seed{s}.csv") for s in (42, 43, 44)]
@@ -37,7 +37,7 @@ for tag in ["mnist", "aug"]:
     }
 out["history"] = hist
 
-# ---------------------------------------------------------------- predictions
+# predictions
 p = pd.read_csv(D / "predictions.csv")
 p["correct"] = p["correct"].astype(bool)
 s42 = p[(p.model == "cnn") & (p.variant == "full") & (p.seed == 42)]
@@ -82,7 +82,7 @@ for var in ["minimal", "full"]:
     cm.to_csv(D / f"confusion_cnn_{var}_seed42.csv")
     out[f"cnn_{var}_seed42_errors"] = int((sub.label != sub.pred).sum())
 
-# ---------------------------------------------------------------- McNemar summary
+# McNemar summary
 mc = pd.read_csv(D / "mcnemar.csv")
 rows = []
 for (a, b), sub in mc.groupby(["config_a", "config_b"], sort=False):
@@ -94,13 +94,13 @@ for (a, b), sub in mc.groupby(["config_a", "config_b"], sort=False):
                  "n_sig": int(sub.significant_5pct.sum())})
 out["mcnemar"] = rows
 
-# ---------------------------------------------------------------- sensitivity
+# sensitivity
 s = pd.read_csv(D / "stroke_ratio_sensitivity.csv")
 agg = s.groupby("stroke_ratio").accuracy.agg(["mean", "std"])
 out["sensitivity"] = {f"{k:.2f}": {"mean": float(v["mean"]), "std": float(v["std"])}
                       for k, v in agg.iterrows()}
 
-# ---------------------------------------------------------------- fine-tune / LOWO
+# fine-tune / LOWO
 ab = pd.read_csv(D / "ablation_summary.csv")
 out["finetune"] = ab[ab.experiment == "finetune"][["model", "stage", "accuracy_mean", "accuracy_std"]].to_dict(orient="records")
 ce = pd.read_csv(D / "ceiling.csv")
@@ -109,17 +109,17 @@ out["finetune_errors"] = {f"{i[0]}/{i[1]}": {"errors_mean": float(r.errors_mean)
 lw = ce[ce.experiment == "lowo"].groupby(["group", "stage"]).agg(errors_mean=("errors", "mean"), n=("n", "first"))
 out["lowo_errors"] = {f"{i[0]}/{i[1]}": {"errors_mean": float(r.errors_mean), "n": int(r.n)} for i, r in lw.iterrows()}
 
-# ---------------------------------------------------------------- confidence
+# confidence
 cf = pd.read_csv(D / "confidence.csv")
 out["confidence"] = cf.set_index(["model", "variant"]).round(4).reset_index().to_dict(orient="records")
 
-# ---------------------------------------------------------------- model size
-# parameter count from the layer shapes in model.py (conv without bias, BN has weight+bias, linear with bias)
+# model size
+# number of CNN parameters (conv without bias, BN weight+bias, linear with bias)
 convs = [(1, 32), (32, 64), (64, 128)]
 n = sum(i * o * 9 + 2 * o for i, o in convs) + 128 * 3 * 3 * 10 + 10
 out["cnn_parameters"] = int(n)
 
-# ---------------------------------------------------------------- dump
+# dump
 def clean(o):
     if isinstance(o, dict):
         return {str(k): clean(v) for k, v in o.items()}

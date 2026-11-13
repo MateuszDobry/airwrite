@@ -25,7 +25,7 @@ def _block(c_in, c_out):
 
 class DigitCNN(nn.Module):
     """
-    Small CNN for 28x28 digits, ~94k parameters.
+    Small CNN for 28x28 digits, ~104k parameters.
 
     Three conv blocks (28 -> 14 -> 7 -> 3), dropout, one linear layer.
     We kept it small because the project is about the data, and it has to
