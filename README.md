@@ -95,13 +95,10 @@ If the whiteboard behaves badly, adjust in `config.py`:
 
 ## Documentation
 
-- `docs/project-plan.md` - step-by-step plan across all phases
-- `docs/division-of-work.md` - who owns which files
 - `docs/SETUP_PL.md` - instalacja i zbieranie danych dla zespołu (po polsku)
-- `docs/team-tasks.md` - concrete tasks per person for the remaining days
-- `docs/remaining-work.md` - checklist for analysis, report and submission
-- `docs/analysis-notes.md` - written interpretation of the results (draft text for the report)
+- `docs/analysis-notes.md` - notes on the results
 - `docs/course-requirements.md` - course brief as a checklist (Polish)
+- `docs/Writing_in_the_Air_report.docx` - the report
 - `docs/course-brief.pdf` - the original brief
 - `docs/project_proposal.pdf` - two-page English proposal
 
@@ -115,4 +112,3 @@ If the whiteboard behaves badly, adjust in `config.py`:
   the pinned `requirements.txt`, CPU. All 9 checkpoints are in `models/`.
   Every number in the report comes from `results/`, every figure from
   `figures/`.
-- Still to do: report, presentation, submission (see `docs/remaining-work.md`).

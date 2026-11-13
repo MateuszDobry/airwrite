@@ -1,8 +1,7 @@
 # Analysis notes (draft text for the report)
 
-Written interpretation of the "must have" analysis items in `docs/remaining-work.md`,
-section 2. It is a draft for sections 3 and 4 of the report: rewrite it freely, but keep
-every number tied to the file it comes from.
+Our notes on the results, used for sections 3 and 4 of the report. Every number
+comes from a file in `results/`.
 
 All numbers are from the official run (7 November 2026, seeds 42-44, 807 of our digits)
 and are the mean over 3 seeds unless stated otherwise. Sources:

@@ -89,4 +89,4 @@ Jeśli Git sprawia problemy: spakuj folder `data/raw/<imie>/` do zipa i wyślij 
 ## 6. Co dalej
 
 Gdy dane wszystkich są w repo, osoba B uruchamia `airwrite_colab.ipynb` na Colabie
-(trening + eksperymenty + wykresy), a dalsze zadania każdej osoby są w `docs/team-tasks.md`.
+(trening + eksperymenty + wykresy).

@@ -1,6 +1,6 @@
 # results/metrics
 
-Written by `metrics_analysis.py` (Kirill Riabkov, person C). Read `results_analysis.ipynb` for
+Written by `metrics_analysis.py` (Kirill Riabkov). Read `results_analysis.ipynb` for
 tables, figures and conclusions.
 
 These files come from the official run: all 9 checkpoints in `models/` (CNN, augmented CNN and

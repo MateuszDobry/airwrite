@@ -1,5 +1,5 @@
 """
-Error analysis (docs/remaining-work.md, section 2).
+Error analysis.
 
     1. per-class F1 for every model and variant (mean of 3 seeds)
     2. how the common confusions change from minimal to full preprocessing
