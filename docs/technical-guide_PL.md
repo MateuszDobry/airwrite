@@ -98,9 +98,9 @@ flowchart TD
     PP --> V[4 warianty: minimal / thickness / centering / full]
 
     subgraph C[Eksperymenty - ablation.py]
-        V --> ZS[1. Zero-shot ablacja<br/>3 modele x 4 warianty x 3 ziarna]
-        V --> FT[2. Fine-tuning 70/30]
-        V --> LOWO[3. Leave-one-writer-out]
+        V --> ZS[Eksp. 1: zero-shot ablacja<br/>3 modele x 4 warianty x 3 ziarna]
+        V --> FT[Eksp. 2: fine-tuning 70/30]
+        V --> LOWO[Eksp. 3: leave-one-writer-out]
     end
     CK --> ZS
     CK --> FT
@@ -354,8 +354,7 @@ def estimate_stroke_width(img):
 
 Na szkielecie (linia środkowa kreski) transformata odległości to połowa
 lokalnej grubości, więc grubość = 2 × mediana. Potem porównujemy ją z celem
-`0.12 × dłuższy bok cyfry` i **erodujemy** (pogrubiamy wstecz, czyli
-odchudzamy) albo **dylatujemy** (pogrubiamy) dyskiem o rozmiarze różnicy.
+`0.12 × dłuższy bok cyfry` i **erodujemy** (pocieniamy) albo **dylatujemy** (pogrubiamy) dyskiem o rozmiarze różnicy.
 Jeśli erozja zjadłaby ponad 75 % tuszu (cienkie fragmenty mogłyby zniknąć),
 kernel jest zmniejszany.
 
