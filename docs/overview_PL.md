@@ -1,7 +1,7 @@
 # *Writing in the Air* – przegląd projektu w 10 minut
 
 Krótka wersja do szybkiego ogarnięcia całości. Szczegóły, fragmenty kodu
-i pytania egzaminatora są w `technical-guide_PL.md`.
+i pytania egzaminatora są w `technical-guide.md`.
 
 ---
 
@@ -133,5 +133,5 @@ a dotrenowanie i test na nowej osobie trafiły w sufit.
 
 ---
 
-**Co dalej:** przeczytaj `technical-guide_PL.md` – tam jest każdy plik
+**Co dalej:** przeczytaj `technical-guide.md` – tam jest każdy plik
 z kodem, uzasadnienie decyzji i 20 pytań egzaminatora z odpowiedziami.
