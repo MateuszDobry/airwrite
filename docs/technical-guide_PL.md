@@ -176,6 +176,104 @@ def predict(img: np.ndarray) -> tuple[int, float]:
     """img: 28x28 float32. Zwraca (cyfra, pewność)."""
 ```
 
+### 2.5 Workflow krok po kroku: co każdy skrypt czyta i co zapisuje
+
+Cały projekt to pięć etapów. Każdy etap zapisuje pliki na dysk, a następny
+je czyta, więc etapy można uruchamiać osobno i nic nie trzeba trzymać
+w pamięci między nimi.
+
+```mermaid
+flowchart LR
+    S1["Etap 1<br/>collect_data.py"] --> S2["Etap 2<br/>train.py"]
+    S2 --> S3["Etap 3<br/>ablation.py"]
+    S3 --> S4["Etap 4<br/>analysis.py<br/>metrics_analysis.py<br/>error_analysis.py"]
+    S4 --> S5["Etap 5<br/>raport + demo<br/>whiteboard.py --predict"]
+```
+
+| Etap | Skrypt | Czyta | Zapisuje | Czas |
+|---|---|---|---|---|
+| 1. Zbieranie danych | `collect_data.py --writer <imię>` | obraz z kamerki | `data/raw/<pisarz>/<cyfra>/*.png` (surowe, różne rozmiary) | zależy od osoby |
+| 2. Trening na MNIST | `train.py` | MNIST (pobierany przez torchvision do `data/mnist/`) | `models/cnn_mnist_seed4X.pt`, `models/cnn_aug_seed4X.pt`, `models/logreg_seed4X.joblib`, `results/history_*.csv`, `results/mnist_test_runs.csv` | ok. 1 h na CPU |
+| 3. Eksperymenty | `ablation.py` | `data/raw/`, wszystkie checkpointy z `models/` | `data/labels.csv`, `results/ablation_runs.csv`, `results/ablation_summary.csv`, `results/lowo_*.csv`, `results/per_class_f1.csv`, macierze pomyłek i galerie błędów w `figures/` | kilka minut |
+| 4a. Wykresy i liczby główne | `analysis.py` | CSV-ki z etapów 2 i 3, MNIST, `data/raw/` (do statystyk domeny) | `figures/*.png/.pdf`, `results/domain_stats.csv`, `results/headline.json` | ok. 1 min |
+| 4b. Statystyka | `metrics_analysis.py` | checkpointy, `data/raw/`, `results/domain_stats.csv`, `results/mnist_test_runs.csv`, `results/ablation_runs.csv`, `results/lowo_runs.csv` | `results/metrics/*.csv` (m.in. `predictions.csv`), `figures/metrics/` | 1–2 min |
+| 4c. Analiza błędów | `error_analysis.py` | `results/metrics/predictions.csv`, checkpointy, MNIST, `data/raw/` | `results/analysis/*.csv`, `figures/analysis/` | kilka minut |
+| 5. Demo | `whiteboard.py --predict` | kamerka, `models/cnn_mnist_seed42.pt` | nic (tylko okno na ekranie) | na żywo |
+
+Dwie rzeczy, które warto umieć powiedzieć:
+
+- **Etapy 3 i 4 nie trenują od zera** (poza krótkim fine-tuningiem
+  w `ablation.py`). Ładują gotowe checkpointy, więc po zmianie preprocessingu
+  wystarczy powtórzyć etap 3 i 4, bez ponownego treningu.
+- **Kolejność w etapie 4 ma znaczenie:** `analysis.py` tworzy
+  `domain_stats.csv`, którego potrzebuje `metrics_analysis.py`, a
+  `metrics_analysis.py` musi być przed `error_analysis.py`, bo ten drugi
+  czyta `results/metrics/predictions.csv` (jeden wiersz na każdy obrazek ×
+  model × wariant × ziarno).
+
+Etapy 2–4 można też uruchomić naraz na Colabie (`airwrite_colab.ipynb`).
+Do sprawdzenia, czy wszystko działa, bez czekania godziny, służą flagi
+`--quick` (mały trening, wyniki w `*/smoke/`) i `--synthetic` (sztuczne dane,
+wyniki w `*/synthetic/`).
+
+### 2.6 Kto kogo importuje
+
+`config.py` importują prawie wszystkie pliki, więc pomijam go w tabeli.
+
+| Plik | Importuje z projektu |
+|---|---|
+| `gestures.py` | tylko stałe z `config` |
+| `whiteboard.py` | `gestures`; w trybie `--predict` także `model` i `preprocessing` |
+| `collect_data.py` | `gestures`, `whiteboard` |
+| `preprocessing.py` | tylko `config` |
+| `model.py` | tylko `config` |
+| `data_utils.py` | `preprocessing` (szkielet i deformacja do danych syntetycznych) |
+| `evaluate.py` | `model`, `plotting` |
+| `train.py` | `data_utils`, `evaluate`, `model`, `preprocessing` (augmentacja) |
+| `ablation.py` | `train` (fine-tuning, ziarna), `data_utils`, `evaluate`, `model`, `preprocessing`, `plotting` |
+| `analysis.py` | `data_utils`, `preprocessing`, `plotting` |
+| `metrics_analysis.py` | `ablation` (lista wariantów), `data_utils`, `evaluate`, `model`, `preprocessing`, `plotting` |
+| `error_analysis.py` | `data_utils`, `model`, `preprocessing`, `plotting` |
+
+Warstwy, od dołu:
+
+1. **Fundament:** `config.py` (stałe), `plotting.py` (styl wykresów).
+2. **Biblioteka:** `preprocessing.py`, `model.py`, `data_utils.py`,
+   `evaluate.py`, `gestures.py`. Nic nie uruchamiają same, tylko dostarczają
+   funkcje.
+3. **Skrypty:** `train.py`, `ablation.py`, `analysis.py`,
+   `metrics_analysis.py`, `error_analysis.py`, `collect_data.py`,
+   `whiteboard.py`. Każdy ma `main()` i parametry z linii poleceń.
+
+Warto zauważyć: `whiteboard.py` importuje `model` i `preprocessing` dopiero
+w `LivePredictor`, czyli tylko w trybie `--predict`. Dzięki temu samo
+rysowanie i zbieranie danych działa bez instalowania PyTorcha.
+
+### 2.7 Droga jednej cyfry, od palca do wyniku
+
+Co dokładnie dzieje się z jedną narysowaną "7":
+
+1. **Kamerka** daje klatkę (prosimy o 960×540, BGR). Obraz jest odbijany lustrzanie.
+2. **MediaPipe** zwraca 21 punktów dłoni (x, y w zakresie 0–1).
+3. **`gestures.fingers_up`** daje np. `[0, 1, 0, 0, 0]`,
+   **`classify_gesture`** zamienia to na `draw`.
+4. **`Whiteboard.update`** bierze czubek palca wskazującego, uśrednia
+   z 5 ostatnich klatek i rysuje odcinek grubości 12 px na czarnym canvasie.
+5. Pięść kończy rysowanie. **`extract_digit`** wycina prostokąt wokół kreski
+   z marginesem 20 px, np. 180×260 px.
+6. **`collect_data.py`** zapisuje go jako `data/raw/mateusz/7/mateusz_7_012.png`.
+   Nic nie jest jeszcze skalowane.
+7. **`preprocess(img, FULL_STEPS)`**:
+   binaryzacja Otsu → grubość kreski ustawiona na 12 % dłuższego boku cyfry →
+   dłuższy bok przeskalowany do 20 px i wklejony w 28×28 → środek masy
+   przesunięty na środek → normalizacja (x − 0,1307) / 0,3081.
+   Wynik: tablica float32 28×28.
+8. **`DigitCNN`**: 1×28×28 → 32×14×14 → 64×7×7 → 128×3×3 → 1152 → 10 logitów.
+9. **Softmax** daje 10 prawdopodobieństw; argmax to predykcja, np. "7"
+   z pewnością 0,99.
+10. W eksperymentach predykcja trafia do `compute_metrics` i wiersza CSV;
+    w demo jest rysowana na ekranie razem z obrazkiem 28×28 z kroku 7.
+
 ---
 
 ## 3. Pliki po kolei
